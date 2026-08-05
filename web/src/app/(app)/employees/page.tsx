@@ -1,6 +1,11 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
+import { deleteEmployeeAction } from "@/app/actions/employees";
+import { DataTable, PageHeader, Row, Cell } from "@/components/page";
+import { DeleteButton } from "@/components/form";
 
-export default async function EmployeesPage() {
+export default async function EmployeesPage({ searchParams }: PageProps<"/employees">) {
+  const { error } = await searchParams;
   const employees = await db.employee.findMany({
     orderBy: { name: "asc" },
     include: {
@@ -13,41 +18,42 @@ export default async function EmployeesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-900">Employees</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Master data, read-only in this phase — input/edit screens (dim_Employee, §5.1) are Phase 2.
+      <PageHeader
+        title="Employees"
+        description="dim_Employee (§5.1) — replaces MST_Employees."
+        action={{ href: "/employees/new", label: "Add Employee" }}
+      />
+      {error ? (
+        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {String(error)}
         </p>
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2">Department</th>
-              <th className="px-4 py-2">Team</th>
-              <th className="px-4 py-2">Role</th>
-              <th className="px-4 py-2 text-right">FTE</th>
-              <th className="px-4 py-2 text-right">Cost rate</th>
-              <th className="px-4 py-2">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((e) => (
-              <tr key={e.id} className="border-b border-slate-50 last:border-0">
-                <td className="px-4 py-2 font-medium text-slate-800">{e.name}</td>
-                <td className="px-4 py-2 text-slate-600">{e.department.name}</td>
-                <td className="px-4 py-2 text-slate-600">{e.team?.name ?? "—"}</td>
-                <td className="px-4 py-2 text-slate-600">{e.jobRole.name}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-700">{e.fte.toString()}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-700">£{e.costRate.toString()}/h</td>
-                <td className="px-4 py-2 text-slate-600">{e.status.name}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      ) : null}
+      <DataTable head={["Name", "Department", "Team", "Role", "FTE", "Cost rate", "Status", ""]}>
+        {employees.map((e) => (
+          <Row key={e.id}>
+            <Cell>
+              <span className="font-medium text-slate-800">{e.name}</span>
+            </Cell>
+            <Cell>{e.department.name}</Cell>
+            <Cell>{e.team?.name ?? "—"}</Cell>
+            <Cell>{e.jobRole.name}</Cell>
+            <Cell align="right">{e.fte.toString()}</Cell>
+            <Cell align="right">£{e.costRate.toString()}/h</Cell>
+            <Cell>{e.status.name}</Cell>
+            <Cell align="right">
+              <div className="flex justify-end gap-2">
+                <Link href={`/employees/${e.id}/edit`} className="text-xs font-medium text-slate-500 hover:text-slate-900">
+                  Edit
+                </Link>
+                <form action={deleteEmployeeAction}>
+                  <input type="hidden" name="id" value={e.id} />
+                  <DeleteButton />
+                </form>
+              </div>
+            </Cell>
+          </Row>
+        ))}
+      </DataTable>
     </div>
   );
 }

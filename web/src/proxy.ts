@@ -4,7 +4,17 @@ import { jwtVerify } from "jose";
 // Optimistic check only — reads the signed cookie, does not hit the database.
 // Real authorization (role checks, per-record access) happens in server
 // components/actions via getSession() in src/lib/auth.ts.
-const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/projects", "/admin"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/employees",
+  "/projects",
+  "/admin",
+  "/departments",
+  "/teams",
+  "/settings",
+  "/forecast",
+  "/capacity",
+];
 const AUTH_ROUTES = ["/login"];
 
 async function hasValidSessionCookie(req: NextRequest): Promise<boolean> {
@@ -37,5 +47,16 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/employees/:path*", "/projects/:path*", "/admin/:path*", "/login"],
+  matcher: [
+    "/dashboard/:path*",
+    "/employees/:path*",
+    "/projects/:path*",
+    "/admin/:path*",
+    "/departments/:path*",
+    "/teams/:path*",
+    "/settings/:path*",
+    "/forecast/:path*",
+    "/capacity/:path*",
+    "/login",
+  ],
 };

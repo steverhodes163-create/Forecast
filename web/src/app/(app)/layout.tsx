@@ -6,7 +6,12 @@ import { logoutAction } from "@/app/actions/auth";
 const NAV = [
   { href: "/dashboard", label: "Overview" },
   { href: "/employees", label: "Employees" },
+  { href: "/departments", label: "Departments" },
+  { href: "/teams", label: "Teams" },
   { href: "/projects", label: "Projects" },
+  { href: "/forecast", label: "Forecast" },
+  { href: "/capacity", label: "Capacity" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -18,13 +23,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-full flex-1 flex-col bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3">
           <div className="flex items-center gap-8">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">YASA</p>
               <p className="-mt-0.5 text-sm font-semibold text-slate-900">Resource Forecasting</p>
             </div>
-            <nav className="flex items-center gap-1">
+            <nav className="flex flex-wrap items-center gap-1">
               {nav.map((item) => (
                 <Link
                   key={item.href}
@@ -52,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">{children}</main>
     </div>
   );
 }

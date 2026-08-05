@@ -1,4 +1,8 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
+import { deleteProjectAction } from "@/app/actions/projects";
+import { DataTable, PageHeader, Row, Cell } from "@/components/page";
+import { DeleteButton } from "@/components/form";
 
 function ragClasses(rag: string | null) {
   switch (rag) {
@@ -13,7 +17,8 @@ function ragClasses(rag: string | null) {
   }
 }
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({ searchParams }: PageProps<"/projects">) {
+  const { error } = await searchParams;
   const projects = await db.project.findMany({
     orderBy: { startDate: "asc" },
     include: {
@@ -25,49 +30,45 @@ export default async function ProjectsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-900">Projects</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Master data, read-only in this phase. Weighted demand (§7.1) uses the probability shown here.
+      <PageHeader
+        title="Projects"
+        description="dim_Project (§5.1) — Weighted Demand (§7.1) uses the probability shown here. Replaces MST_Projects."
+        action={{ href: "/projects/new", label: "Add Project" }}
+      />
+      {error ? (
+        <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {String(error)}
         </p>
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-              <th className="px-4 py-2">Project</th>
-              <th className="px-4 py-2">Customer</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2 text-right">Probability</th>
-              <th className="px-4 py-2 text-right">Revenue forecast</th>
-              <th className="px-4 py-2">RAG</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.map((p) => (
-              <tr key={p.id} className="border-b border-slate-50 last:border-0">
-                <td className="px-4 py-2 font-medium text-slate-800">{p.name}</td>
-                <td className="px-4 py-2 text-slate-600">{p.customer.name}</td>
-                <td className="px-4 py-2 text-slate-600">{p.projectStatus.name}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-700">
-                  {(p.probabilityOverridePct ?? p.projectStatus.defaultProbabilityPct).toString()}%
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-700">
-                  {p.revenueForecast ? `£${Number(p.revenueForecast).toLocaleString()}` : "—"}
-                </td>
-                <td className="px-4 py-2">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${ragClasses(p.ragStatus)}`}
-                  >
-                    {p.ragStatus ?? "—"}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      ) : null}
+      <DataTable head={["Project", "Customer", "Status", "Probability", "Revenue forecast", "RAG", ""]}>
+        {projects.map((p) => (
+          <Row key={p.id}>
+            <Cell>
+              <span className="font-medium text-slate-800">{p.name}</span>
+            </Cell>
+            <Cell>{p.customer.name}</Cell>
+            <Cell>{p.projectStatus.name}</Cell>
+            <Cell align="right">{(p.probabilityOverridePct ?? p.projectStatus.defaultProbabilityPct).toString()}%</Cell>
+            <Cell align="right">{p.revenueForecast ? `£${Number(p.revenueForecast).toLocaleString()}` : "—"}</Cell>
+            <Cell>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${ragClasses(p.ragStatus)}`}>
+                {p.ragStatus ?? "—"}
+              </span>
+            </Cell>
+            <Cell align="right">
+              <div className="flex justify-end gap-2">
+                <Link href={`/projects/${p.id}/edit`} className="text-xs font-medium text-slate-500 hover:text-slate-900">
+                  Edit
+                </Link>
+                <form action={deleteProjectAction}>
+                  <input type="hidden" name="id" value={p.id} />
+                  <DeleteButton />
+                </form>
+              </div>
+            </Cell>
+          </Row>
+        ))}
+      </DataTable>
     </div>
   );
 }

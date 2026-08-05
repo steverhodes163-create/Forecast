@@ -3,7 +3,7 @@
 
 **Status:** Phase 0 (this document) approved as a platform-neutral data model. Platform
 selection revised per addendum below — **build has moved from Excel to a web application.**
-Phase 1 (foundations) is now underway.
+Phases 1 (foundations) and 2 (master data & input UI) are complete; see `web/README.md`.
 **Author:** Claude (Solution Architect)
 **Date:** 2026-08-05 (v0.1) / 2026-08-05 (v0.2 addendum)
 
@@ -56,9 +56,10 @@ actuals import, dashboards, what-if, hardening, UAT — still apply in spirit, r
 the build proceeds):
 
 1. **Foundations** — project scaffold, relational schema (Prisma/PostgreSQL) covering
-   every entity in §5, auth with roles, minimal navigation shell. *(this session)*
-2. **Master data & input UI** — CRUD screens for master data (Employees, Teams, Projects,
-   etc.) and forecast/capacity input, replacing `MST_`/`INP_` sheets.
+   every entity in §5, auth with roles, minimal navigation shell. ✅ *done*
+2. **Master data & input UI** — CRUD screens for master data (Employees, Departments,
+   Teams, Projects, and the 14 scalar lookup/config tables) and forecast/capacity input
+   (all three §7 planning modes) replacing `MST_`/`INP_` sheets. ✅ *done — see `web/README.md`*
 3. **Dashboards** — the §9 dashboards as real charts against live queries.
 4. **Imports** — the §8 staging pipeline as file-upload + server-side conforming jobs.
 5. **What-if & scenarios** — §7.4 as an interactive UI over `ScenarioAdjustment` rows.
