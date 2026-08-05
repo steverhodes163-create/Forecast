@@ -1,9 +1,68 @@
 # YASA Enterprise Resource Forecasting & Capacity Planning System
-## Solution Architecture Document — v0.1 (Draft for Review)
+## Solution Architecture Document — v0.2
 
-**Status:** DRAFT — pending approval. No workbook build has started.
+**Status:** Phase 0 (this document) approved as a platform-neutral data model. Platform
+selection revised per addendum below — **build has moved from Excel to a web application.**
+Phase 1 (foundations) is now underway.
 **Author:** Claude (Solution Architect)
-**Date:** 2026-08-05
+**Date:** 2026-08-05 (v0.1) / 2026-08-05 (v0.2 addendum)
+
+---
+
+## 0. Platform Decision Addendum (v0.2)
+
+Sections 1–17 below are the original Excel-based architecture and are kept intact
+because **the data model they define does not change** — that was the point of designing
+it as a platform-agnostic star schema in the first place (§1, §15). What changes is
+*where the model lives and how people reach it.*
+
+**Decision: build a custom web application** (Next.js + PostgreSQL via Prisma) instead of
+an Excel workbook, starting from Phase 1.
+
+**Why the pivot:**
+- §17 of the original document named two ceilings Excel could not get past: no real
+  multi-user co-authoring on the Data Model, and no native row-level security. Both are
+  solved by a proper web app with a real database and an auth/role layer — not deferred to
+  a hypothetical future Dataverse migration, but solved now.
+- YASA asked directly whether an entirely web-based system was possible. It is, and given
+  hundreds of employees and projects across Leadership, Engineering, PMO, Finance and HR
+  all needing concurrent access, it's the better fit than a single-file workbook.
+
+**Two web-based routes were considered:**
+
+| | Power Apps + Dataverse + Power BI | Custom web app (chosen) |
+|---|---|---|
+| Reuses this data model | Yes, near table-for-table | Yes, same star schema translated to relational tables |
+| Multi-user editing & RLS | Yes, native | Yes, via app-level auth/roles |
+| Licensing dependency | Requires Power Platform/Dataverse licensing (unconfirmed at YASA) | None — open-source stack |
+| Buildable directly in this engineering session | No (needs a Power Platform tenant/connection) | Yes |
+
+The custom route was chosen because it has no unconfirmed licensing dependency and is the
+one that could actually be built, run, and verified end-to-end in this session. **If
+Power Platform licensing is confirmed available and preferred, this decision is
+reversible without redesigning the data model** — the same entities and relationships map
+directly onto Dataverse tables (§15 anticipated exactly this kind of migration).
+
+**What carries forward unchanged from §1–17:** the entity list, relationships, calculation
+logic (as query/service logic instead of DAX), the scenario/what-if mechanism (§7.4), the
+import/staging pattern (§8), and the phase-gated development approach (§16). **What
+changes:** the physical layer is PostgreSQL, not Power Pivot; the presentation layer is
+React pages, not PivotTables/Excel dashboards; the calculation layer is server-side
+TypeScript/SQL, not DAX; and §11's security gap is closed with real authentication and
+role-based access control rather than deferred.
+
+**Revised near-term phases** (supersedes §16 Phase 1–2 numbering; §16's later phases —
+actuals import, dashboards, what-if, hardening, UAT — still apply in spirit, renumbered as
+the build proceeds):
+
+1. **Foundations** — project scaffold, relational schema (Prisma/PostgreSQL) covering
+   every entity in §5, auth with roles, minimal navigation shell. *(this session)*
+2. **Master data & input UI** — CRUD screens for master data (Employees, Teams, Projects,
+   etc.) and forecast/capacity input, replacing `MST_`/`INP_` sheets.
+3. **Dashboards** — the §9 dashboards as real charts against live queries.
+4. **Imports** — the §8 staging pipeline as file-upload + server-side conforming jobs.
+5. **What-if & scenarios** — §7.4 as an interactive UI over `ScenarioAdjustment` rows.
+6. **Hardening & UAT** — as §16 Phase 9–10.
 
 ---
 

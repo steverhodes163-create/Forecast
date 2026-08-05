@@ -1,0 +1,572 @@
+// YASA Enterprise Resource Forecasting & Capacity Planning System
+// Relational schema — direct translation of docs/Solution-Architecture.md §5-6.
+// Model names drop the dim_/fact_/brg_ prefixes used in the architecture doc;
+// the mapping is 1:1 (e.g. dim_Employee -> Employee, fact_ForecastAllocation -> ForecastAllocation).
+// dim_Role is renamed JobRole here to avoid clashing with the app's auth AppRole enum.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth (resolves the §17/§11 gap: Excel has no real multi-user RBAC — this does)
+// ---------------------------------------------------------------------------
+
+enum AppRole {
+  ADMIN
+  PMO
+  FINANCE
+  HR
+  ENGINEERING_LEAD
+  VIEWER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  appRole      AppRole   @default(VIEWER)
+  employeeId   Int?      @unique
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Organisation hierarchy (§5.1: Business -> Department -> Team -> Employee)
+// ---------------------------------------------------------------------------
+
+model BusinessUnit {
+  id         Int          @id @default(autoincrement())
+  name       String       @unique
+  notes      String?
+  departments Department[]
+  projects   Project[]
+}
+
+model Department {
+  id             Int          @id @default(autoincrement())
+  name           String
+  businessUnitId Int
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  teams          Team[]
+  costCentres    CostCentre[]
+  employees      Employee[]
+
+  @@unique([businessUnitId, name])
+}
+
+model Team {
+  id                 Int          @id @default(autoincrement())
+  name               String
+  departmentId       Int
+  department         Department   @relation(fields: [departmentId], references: [id])
+  managerEmployeeId  Int?
+  manager            Employee?    @relation("TeamManager", fields: [managerEmployeeId], references: [id])
+  budgetedHeadcount  Decimal?     @db.Decimal(6, 2)
+  notes              String?
+  employees          Employee[]   @relation("EmployeeTeam")
+  contractors        Contractor[]
+  forecastAllocations ForecastAllocation[]
+  capacities         Capacity[]
+  recruitments       Recruitment[]
+  scenarioAdjustments ScenarioAdjustment[]
+
+  @@unique([departmentId, name])
+}
+
+model Employee {
+  id                    Int              @id @default(autoincrement())
+  name                  String
+  managerEmployeeId     Int?
+  manager               Employee?        @relation("EmployeeManager", fields: [managerEmployeeId], references: [id])
+  directReports         Employee[]       @relation("EmployeeManager")
+  departmentId          Int
+  department            Department       @relation(fields: [departmentId], references: [id])
+  teamId                Int?
+  team                  Team?            @relation("EmployeeTeam", fields: [teamId], references: [id])
+  teamsManaged          Team[]           @relation("TeamManager")
+  jobRoleId             Int
+  jobRole               JobRole          @relation(fields: [jobRoleId], references: [id])
+  gradeId               Int?
+  grade                 Grade?           @relation(fields: [gradeId], references: [id])
+  employmentTypeId      Int
+  employmentType        EmploymentType   @relation(fields: [employmentTypeId], references: [id])
+  locationId            Int
+  location              Location         @relation(fields: [locationId], references: [id])
+  workingCalendarId     Int
+  workingCalendar       WorkingCalendar  @relation(fields: [workingCalendarId], references: [id])
+  contractHoursPerWeek  Decimal          @db.Decimal(5, 2)
+  standardWeeklyHours   Decimal          @db.Decimal(5, 2)
+  fte                   Decimal          @db.Decimal(4, 3)
+  costRate              Decimal          @db.Decimal(10, 2)
+  chargeRate            Decimal?         @db.Decimal(10, 2)
+  employmentStartDate   DateTime
+  employmentEndDate     DateTime?
+  statusId              Int
+  status                EmployeeStatus   @relation(fields: [statusId], references: [id])
+  holidayAllowanceDays  Decimal?         @db.Decimal(4, 1)
+  trainingAllowanceDays Decimal?         @db.Decimal(4, 1)
+  utilisationTargetPct  Decimal?         @db.Decimal(5, 2)
+  notes                 String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  employeeSkills        EmployeeSkill[]
+  forecastAllocations   ForecastAllocation[]
+  actualAllocations     ActualAllocation[]
+  projectsManaged       Project[]        @relation("ProjectManager")
+  customerAccounts      Customer[]       @relation("CustomerAccountManager")
+  programmesManaged     Programme[]      @relation("ProgrammeManager")
+  user                  User?
+
+  @@index([departmentId])
+  @@index([teamId])
+  @@index([managerEmployeeId])
+}
+
+model JobRole {
+  id                Int           @id @default(autoincrement())
+  name              String        @unique
+  disciplineCategory String?
+  employees         Employee[]
+  contractors       Contractor[]
+  recruitments      Recruitment[]
+}
+
+model Grade {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  level     Int
+  employees Employee[]
+}
+
+model EmploymentType {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  employees Employee[]
+}
+
+model EmployeeStatus {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  employees Employee[]
+}
+
+model Location {
+  id                Int              @id @default(autoincrement())
+  name              String           @unique
+  country           String
+  regionCode        String?
+  workingCalendarId Int
+  workingCalendar   WorkingCalendar  @relation(fields: [workingCalendarId], references: [id])
+  employees         Employee[]
+  publicHolidays    PublicHoliday[]
+}
+
+model WorkingCalendar {
+  id                  Int         @id @default(autoincrement())
+  name                String      @unique
+  standardWeeklyHours Decimal     @db.Decimal(5, 2)
+  countryCode         String
+  employees           Employee[]
+  locations           Location[]
+}
+
+model PublicHoliday {
+  id          Int      @id @default(autoincrement())
+  locationId  Int
+  location    Location @relation(fields: [locationId], references: [id])
+  holidayDate DateTime @db.Date
+  name        String
+
+  @@unique([locationId, holidayDate])
+}
+
+// Date dimension (§5.1 dim_Calendar). Every fact table hangs off this by dateKey
+// so "view by Week / Month / Quarter / Year" is one join, not five separate builds.
+model CalendarDate {
+  dateKey        Int      @id
+  date           DateTime @unique @db.Date
+  dayName        String
+  weekNumber     Int
+  weekStartDate  DateTime @db.Date
+  monthNumber    Int
+  monthName      String
+  quarter        Int
+  fiscalYear     Int
+  fiscalPeriod   Int
+  isWorkingDay   Boolean
+  isPublicHoliday Boolean
+
+  forecastAllocations ForecastAllocation[]
+  actualAllocations   ActualAllocation[]
+  capacities          Capacity[]
+  budgets             Budget[]
+  scenarioAdjustments ScenarioAdjustment[]
+}
+
+// ---------------------------------------------------------------------------
+// Skills (§5.1 — many-to-many via EmployeeSkill bridge)
+// ---------------------------------------------------------------------------
+
+model SkillCategory {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique
+  skills Skill[]
+}
+
+model Skill {
+  id              Int             @id @default(autoincrement())
+  name            String          @unique
+  skillCategoryId Int
+  skillCategory   SkillCategory   @relation(fields: [skillCategoryId], references: [id])
+  isCriticalSkill Boolean         @default(false)
+  employeeSkills  EmployeeSkill[]
+  forecastAllocations ForecastAllocation[]
+}
+
+model EmployeeSkill {
+  id                Int       @id @default(autoincrement())
+  employeeId        Int
+  employee          Employee  @relation(fields: [employeeId], references: [id])
+  skillId           Int
+  skill             Skill     @relation(fields: [skillId], references: [id])
+  competencyLevel   Int // 1-5
+  yearsExperience   Decimal?  @db.Decimal(4, 1)
+  approved          Boolean   @default(false)
+  lastValidatedDate DateTime? @db.Date
+  isPrimarySkill    Boolean   @default(false)
+  isSecondarySkill  Boolean   @default(false)
+  isFutureSkill     Boolean   @default(false)
+
+  @@unique([employeeId, skillId])
+}
+
+// ---------------------------------------------------------------------------
+// Customers / Programmes / Projects (§5.1)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id                      Int        @id @default(autoincrement())
+  name                    String     @unique
+  accountManagerEmployeeId Int?
+  accountManager          Employee?  @relation("CustomerAccountManager", fields: [accountManagerEmployeeId], references: [id])
+  notes                   String?
+  programmes              Programme[]
+  projects                Project[]
+}
+
+model Programme {
+  id                       Int        @id @default(autoincrement())
+  name                     String
+  customerId               Int
+  customer                 Customer   @relation(fields: [customerId], references: [id])
+  programmeManagerEmployeeId Int?
+  programmeManager         Employee?  @relation("ProgrammeManager", fields: [programmeManagerEmployeeId], references: [id])
+  notes                    String?
+  projects                 Project[]
+}
+
+model ProjectStatus {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique // Prospect, RFQ, Preferred, Committed, Won, Cancelled
+  defaultProbabilityPct Decimal   @db.Decimal(5, 2)
+  sortOrder             Int
+  projects              Project[]
+}
+
+model Priority {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  sortOrder Int
+  projects  Project[]
+}
+
+model Project {
+  id                      Int            @id @default(autoincrement())
+  name                    String
+  customerId              Int
+  customer                Customer       @relation(fields: [customerId], references: [id])
+  programmeId             Int?
+  programme               Programme?     @relation(fields: [programmeId], references: [id])
+  projectManagerEmployeeId Int?
+  projectManager          Employee?      @relation("ProjectManager", fields: [projectManagerEmployeeId], references: [id])
+  businessUnitId          Int
+  businessUnit            BusinessUnit   @relation(fields: [businessUnitId], references: [id])
+  priorityId              Int
+  priority                Priority       @relation(fields: [priorityId], references: [id])
+  projectStatusId         Int
+  projectStatus           ProjectStatus  @relation(fields: [projectStatusId], references: [id])
+  lifecyclePhase          String?
+  probabilityOverridePct  Decimal?       @db.Decimal(5, 2)
+  startDate               DateTime?      @db.Date
+  finishDate              DateTime?      @db.Date
+  revenueForecast         Decimal?       @db.Decimal(14, 2)
+  budgetCost              Decimal?       @db.Decimal(14, 2)
+  targetMarginPct         Decimal?       @db.Decimal(5, 2)
+  strategicImportance     Boolean        @default(false)
+  ragStatus               String?
+  gateway                 String?
+  technology              String?
+  platform                String?
+  costCentreId            Int?
+  costCentre              CostCentre?    @relation(fields: [costCentreId], references: [id])
+  notes                   String?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  forecastAllocations     ForecastAllocation[]
+  actualAllocations       ActualAllocation[]
+  scenarioAdjustments     ScenarioAdjustment[]
+
+  @@index([projectStatusId])
+  @@index([businessUnitId])
+}
+
+model ResourceType {
+  id                  Int                  @id @default(autoincrement())
+  name                String               @unique // Employee, Contractor, Agency, Graduate
+  forecastAllocations ForecastAllocation[]
+}
+
+model Contractor {
+  id                  Int       @id @default(autoincrement())
+  name                String
+  agencyName          String?
+  jobRoleId           Int?
+  jobRole             JobRole?  @relation(fields: [jobRoleId], references: [id])
+  costRate            Decimal   @db.Decimal(10, 2)
+  contractStartDate   DateTime? @db.Date
+  contractEndDate     DateTime? @db.Date
+  teamId              Int?
+  team                Team?     @relation(fields: [teamId], references: [id])
+  forecastAllocations ForecastAllocation[]
+}
+
+model CostCentre {
+  id           Int        @id @default(autoincrement())
+  code         String     @unique
+  name         String
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+  projects     Project[]
+  budgets      Budget[]
+}
+
+// ---------------------------------------------------------------------------
+// Scenarios, forecast sources, recruitment status, import batches (§5.1)
+// ---------------------------------------------------------------------------
+
+model Scenario {
+  id                Int       @id @default(autoincrement())
+  name              String    @unique // Budget, Baseline, Current Forecast, Latest Forecast, Scenario A/B/C...
+  isActive          Boolean   @default(true)
+  isLocked          Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  baseScenarioId    Int?
+  baseScenario      Scenario? @relation("ScenarioBase", fields: [baseScenarioId], references: [id])
+  derivedScenarios  Scenario[] @relation("ScenarioBase")
+
+  forecastAllocations ForecastAllocation[]
+  capacities          Capacity[]
+  budgets             Budget[]
+  scenarioAdjustments ScenarioAdjustment[]
+}
+
+model ForecastSource {
+  id                Int       @id @default(autoincrement())
+  name              String    @unique // Project, Business Development, RFQ, BAU, CI, Innovation, Training,
+                                       // Management, Quality, Customer Support, Annual Leave, Sickness, Internal Projects
+  isProjectLinked   Boolean   @default(false)
+  forecastAllocations ForecastAllocation[]
+  actualAllocations   ActualAllocation[]
+}
+
+model RecruitmentStatus {
+  id           Int           @id @default(autoincrement())
+  name         String        @unique // Vacancy Approved, Recruiting, Interviewing, Offer Made, Offer Accepted, Cancelled, Started
+  sortOrder    Int
+  recruitments Recruitment[]
+}
+
+model AdjustmentType {
+  id                  Int                  @id @default(autoincrement())
+  name                String               @unique // Delay, Cancel, Win, Recruitment Freeze, New Hire, Contractor Loss, Team Expansion, Team Reduction
+  scenarioAdjustments ScenarioAdjustment[]
+}
+
+model ImportBatch {
+  id                Int                @id @default(autoincrement())
+  sourceSystem      String
+  sourceFileName    String
+  refreshTimestamp  DateTime           @default(now())
+  rowCount          Int
+  exceptionCount    Int
+  actualAllocations ActualAllocation[]
+}
+
+enum CostCategory {
+  DIRECT_LABOUR
+  INDIRECT_LABOUR
+  CONTRACTOR
+  AGENCY
+  CAPITALISED_ENGINEERING
+}
+
+// ---------------------------------------------------------------------------
+// Transactional / fact tables (§5.2)
+// ---------------------------------------------------------------------------
+
+// Polymorphic on demand mode (see §3, §17 #1 of the architecture doc):
+// exactly one of employeeId / teamId / skillId is populated per row, matching
+// whichever of the three planning modes (Team / Employee / Skill) created it.
+model ForecastAllocation {
+  id               Int            @id @default(autoincrement())
+  scenarioId       Int
+  scenario         Scenario       @relation(fields: [scenarioId], references: [id])
+  projectId        Int?
+  project          Project?       @relation(fields: [projectId], references: [id])
+  employeeId       Int?
+  employee         Employee?      @relation(fields: [employeeId], references: [id])
+  teamId           Int?
+  team             Team?          @relation(fields: [teamId], references: [id])
+  skillId          Int?
+  skill            Skill?         @relation(fields: [skillId], references: [id])
+  contractorId     Int?
+  contractor       Contractor?    @relation(fields: [contractorId], references: [id])
+  resourceTypeId   Int
+  resourceType     ResourceType   @relation(fields: [resourceTypeId], references: [id])
+  forecastSourceId Int
+  forecastSource   ForecastSource @relation(fields: [forecastSourceId], references: [id])
+  dateKey          Int
+  calendarDate     CalendarDate   @relation(fields: [dateKey], references: [dateKey])
+  hours            Decimal        @db.Decimal(8, 2)
+  fte              Decimal?       @db.Decimal(6, 3) // derived from hours on write, not independently editable — see §17 #2
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([scenarioId, dateKey])
+  @@index([projectId])
+  @@index([employeeId])
+  @@index([teamId])
+  @@index([skillId])
+}
+
+model ActualAllocation {
+  id               Int            @id @default(autoincrement())
+  employeeId       Int
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  projectId        Int?
+  project          Project?       @relation(fields: [projectId], references: [id])
+  forecastSourceId Int
+  forecastSource   ForecastSource @relation(fields: [forecastSourceId], references: [id])
+  dateKey          Int
+  calendarDate     CalendarDate   @relation(fields: [dateKey], references: [dateKey])
+  actualHours      Decimal        @db.Decimal(8, 2)
+  importBatchId    Int
+  importBatch      ImportBatch    @relation(fields: [importBatchId], references: [id])
+
+  @@index([employeeId, dateKey])
+  @@index([projectId])
+}
+
+// AvailableHours / AvailableFTE / AvailableCost are computed in the service layer,
+// not stored here — see §17 #3 of the architecture doc.
+model Capacity {
+  id                       Int      @id @default(autoincrement())
+  teamId                   Int
+  team                     Team     @relation(fields: [teamId], references: [id])
+  scenarioId               Int
+  scenario                 Scenario @relation(fields: [scenarioId], references: [id])
+  dateKey                  Int
+  calendarDate             CalendarDate @relation(fields: [dateKey], references: [dateKey])
+  budgetedHeadcount        Decimal  @db.Decimal(6, 2)
+  actualHeadcount          Decimal  @db.Decimal(6, 2)
+  vacancies                Decimal  @db.Decimal(6, 2)
+  contractorsCount         Decimal  @db.Decimal(6, 2)
+  agencyCount              Decimal  @db.Decimal(6, 2)
+  graduateIntakeCount      Decimal  @db.Decimal(6, 2)
+  futureHiresCount         Decimal  @db.Decimal(6, 2)
+  leaversCount             Decimal  @db.Decimal(6, 2)
+  standardHours            Decimal  @db.Decimal(10, 2)
+  trainingHours            Decimal  @db.Decimal(10, 2)
+  businessShutdownHours    Decimal  @db.Decimal(10, 2)
+  holidayHours             Decimal  @db.Decimal(10, 2)
+  internalMeetingHours     Decimal  @db.Decimal(10, 2)
+  bauAllowanceHours        Decimal  @db.Decimal(10, 2)
+  managementOverheadHours  Decimal  @db.Decimal(10, 2)
+
+  @@unique([teamId, scenarioId, dateKey])
+}
+
+model Recruitment {
+  id                  Int                @id @default(autoincrement())
+  teamId              Int
+  team                Team               @relation(fields: [teamId], references: [id])
+  jobRoleId           Int
+  jobRole             JobRole            @relation(fields: [jobRoleId], references: [id])
+  recruitmentStatusId Int
+  recruitmentStatus   RecruitmentStatus  @relation(fields: [recruitmentStatusId], references: [id])
+  approvedDate        DateTime?          @db.Date
+  targetStartDate     DateTime?          @db.Date
+  actualStartDate     DateTime?          @db.Date
+  cancelledDate       DateTime?          @db.Date
+  notes               String?
+
+  @@index([teamId])
+  @@index([recruitmentStatusId])
+}
+
+model Budget {
+  id           Int          @id @default(autoincrement())
+  costCentreId Int
+  costCentre   CostCentre   @relation(fields: [costCentreId], references: [id])
+  scenarioId   Int
+  scenario     Scenario     @relation(fields: [scenarioId], references: [id])
+  dateKey      Int
+  calendarDate CalendarDate @relation(fields: [dateKey], references: [dateKey])
+  budgetAmount Decimal      @db.Decimal(14, 2)
+  costCategory CostCategory
+
+  @@unique([costCentreId, scenarioId, dateKey, costCategory])
+}
+
+// The what-if engine (§7.4): a scenario is Baseline + these adjustment rows,
+// resolved at query time. "Delay Project X by 8 weeks" is one row insert here,
+// not a copy of the whole allocation table.
+model ScenarioAdjustment {
+  id               Int            @id @default(autoincrement())
+  scenarioId       Int
+  scenario         Scenario       @relation(fields: [scenarioId], references: [id])
+  adjustmentTypeId Int
+  adjustmentType   AdjustmentType @relation(fields: [adjustmentTypeId], references: [id])
+  projectId        Int?
+  project          Project?       @relation(fields: [projectId], references: [id])
+  teamId           Int?
+  team             Team?          @relation(fields: [teamId], references: [id])
+  deltaWeeks       Int?
+  effectiveDateKey Int?
+  calendarDate     CalendarDate?  @relation(fields: [effectiveDateKey], references: [dateKey])
+  notes            String?
+  createdBy        String?
+  createdAt        DateTime       @default(now())
+}
+
+// AI-readiness / documentation table (§5.1, §15, §17) — not user-facing;
+// gives a future NL/Copilot layer a semantic map of what every measure means.
+model MeasureCatalog {
+  id                   Int      @id @default(autoincrement())
+  name                 String   @unique
+  measureGroup         String
+  description          String
+  expression           String
+  businessQuestionTags String[]
+}
