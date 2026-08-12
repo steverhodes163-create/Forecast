@@ -83,6 +83,7 @@ model Team {
 
 model Employee {
   id                    Int              @id @default(autoincrement())
+  employeeNumber        String?          @unique // natural key for import matching (§8) -- never match imports by name
   name                  String
   managerEmployeeId     Int?
   manager               Employee?        @relation("EmployeeManager", fields: [managerEmployeeId], references: [id])
@@ -291,6 +292,7 @@ model Priority {
 
 model Project {
   id                      Int            @id @default(autoincrement())
+  projectCode             String?        @unique // natural key for import matching (§8)
   name                    String
   customerId              Int
   customer                Customer       @relation(fields: [customerId], references: [id])
@@ -410,6 +412,19 @@ model ImportBatch {
   rowCount          Int
   exceptionCount    Int
   actualAllocations ActualAllocation[]
+  exceptions        ImportException[]
+}
+
+// §8 import pipeline: rows that fail to conform (no matching Employee/Project)
+// land here instead of being silently dropped -- the OUT_ImportExceptions review queue.
+model ImportException {
+  id            Int         @id @default(autoincrement())
+  importBatchId Int
+  importBatch   ImportBatch @relation(fields: [importBatchId], references: [id])
+  rowNumber     Int
+  rawData       String
+  reason        String
+  createdAt     DateTime    @default(now())
 }
 
 enum CostCategory {

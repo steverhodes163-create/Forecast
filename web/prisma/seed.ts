@@ -127,6 +127,7 @@ async function main() {
   console.log("Seeding employees...");
   const manager = await db.employee.create({
     data: {
+      employeeNumber: "EMP-1001",
       name: "Alex Whitfield",
       departmentId: deptMech.id,
       teamId: teamRotorStator.id,
@@ -150,17 +151,18 @@ async function main() {
   await db.team.update({ where: { id: teamRotorStator.id }, data: { managerEmployeeId: manager.id } });
 
   const engineerSeeds = [
-    { name: "Priya Chandran", team: teamRotorStator, role: "Rotor Design Engineer", grade: "Senior Engineer", rate: 55 },
-    { name: "Tom Harding", team: teamRotorStator, role: "Stator Design Engineer", grade: "Engineer", rate: 42 },
-    { name: "Mei Lin Foster", team: teamControls, role: "Power Electronics Engineer", grade: "Senior Engineer", rate: 58 },
-    { name: "Callum Reyes", team: teamControls, role: "Controls Engineer", grade: "Engineer", rate: 44 },
-    { name: "Sofia Marchetti", team: teamPMO, role: "Project Manager", grade: "Senior Engineer", rate: 52 },
+    { number: "EMP-1002", name: "Priya Chandran", team: teamRotorStator, role: "Rotor Design Engineer", grade: "Senior Engineer", rate: 55 },
+    { number: "EMP-1003", name: "Tom Harding", team: teamRotorStator, role: "Stator Design Engineer", grade: "Engineer", rate: 42 },
+    { number: "EMP-1004", name: "Mei Lin Foster", team: teamControls, role: "Power Electronics Engineer", grade: "Senior Engineer", rate: 58 },
+    { number: "EMP-1005", name: "Callum Reyes", team: teamControls, role: "Controls Engineer", grade: "Engineer", rate: 44 },
+    { number: "EMP-1006", name: "Sofia Marchetti", team: teamPMO, role: "Project Manager", grade: "Senior Engineer", rate: 52 },
   ];
   const engineers = [];
   for (const e of engineerSeeds) {
     engineers.push(
       await db.employee.create({
         data: {
+          employeeNumber: e.number,
           name: e.name,
           managerEmployeeId: manager.id,
           departmentId: e.team.departmentId,
@@ -283,6 +285,7 @@ async function main() {
 
   const projectWon = await db.project.create({
     data: {
+      projectCode: "PRJ-450",
       name: "NM-450 Traction Motor (sample)",
       customerId: customer.id,
       programmeId: programme.id,
@@ -303,6 +306,7 @@ async function main() {
   });
   const projectRFQ = await db.project.create({
     data: {
+      projectCode: "PRJ-AURORA",
       name: "Aurora Light Commercial EV Motor (sample)",
       customerId: customer.id,
       businessUnitId: businessUnit.id,
