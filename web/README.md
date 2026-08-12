@@ -1,6 +1,6 @@
 # YASA Resource Forecasting — Web App
 
-Phases 1–2 (Foundations, Master Data & Input) of the platform described in
+Phases 1–3 (Foundations, Master Data & Input, Dashboards) of the platform described in
 `../docs/Solution-Architecture.md` (see §0 Platform Decision Addendum for why this is a
 web app rather than an Excel workbook, and what does/doesn't change from the original
 architecture).
@@ -14,6 +14,7 @@ architecture).
   role-based access control via `AppRole` — this is what closes the §17/§11 gap Excel
   couldn't: real multi-user access with real per-route authorization, not just a hidden tab.
 - **Tailwind CSS 4** for styling
+- **Recharts** for the §9 dashboard charts
 
 ## Local setup
 
@@ -54,6 +55,22 @@ recreates the local dev database; never run against a shared/production database
   `ADMIN`/`PMO`; forecast/capacity entry requires `ADMIN`/`PMO`/`ENGINEERING_LEAD`
   (`requireEditor()` in each `src/app/actions/*.ts` file).
 
+**Phase 3 (Dashboards) — replaces the KPI-only `/dashboard` with real §9 dashboards:**
+- `src/lib/measures.ts` — the calculation layer: the §7 DAX-equivalent formulas
+  (Utilisation %, Available Hours, Committed/Weighted/Stretch Demand, headcount vs
+  vacancy) as plain TypeScript functions, queried once and shared by every dashboard.
+- **`/dashboard` (Business Overview)** — KPI cards, a Manhattan chart (demand vs capacity
+  by month), a demand bridge waterfall (Committed → Weighted → Stretch), and a
+  team × month utilisation heat map.
+- **`/team-overview`** — utilisation trend line per team, headcount vs vacancy vs open
+  recruitment pipeline.
+- **`/project-overview`** — weighted demand by project (bar colour = RAG status), revenue
+  and RAG summary.
+- `prisma/seed.ts` note: `fact_Capacity`'s grain is monthly per the architecture doc — the
+  seed writes one row per team per month (via the shared `buildCalendarDateRow` in
+  `src/lib/calendar.ts`), not one per week, so monthly aggregates aren't accidentally
+  inflated by summing several weeks' worth of the same figures.
+
 **Testing** — `scripts/e2e-*.mjs`, Playwright scripts run against a live `npm run start`:
 - `e2e-smoke.mjs` — auth flow: unauth redirect → login → data pages → RBAC-gated admin
   page → logout → re-blocked.
@@ -63,12 +80,15 @@ recreates the local dev database; never run against a shared/production database
   renders correctly, deletes one.
 - `e2e-capacity.mjs` — verifies the upsert-not-duplicate behaviour and the live Available
   Hours calculation before and after an update.
+- `e2e-dashboard.mjs` — confirms the Business Overview's charts and heat map actually
+  render (checks for recharts SVG elements and heat map cells, not just page 200s).
 
 Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `npm run dev`)
-is serving on port 3100.
+is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
+`.screenshots/` (gitignored) if you want a quick visual check without running the app
+yourself.
 
 ## Not yet built (later phases — see §0 of the architecture doc)
 
-The §9 dashboards as real charts (only KPI counts exist so far on `/dashboard`), the §8
-import pipeline, and the §7.4 what-if UI. The data model and the input screens underneath
-all of them already exist.
+The §8 import pipeline and the §7.4 what-if UI. The data model, input screens, and
+calculation layer underneath both already exist.

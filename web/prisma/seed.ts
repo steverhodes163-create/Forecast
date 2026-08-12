@@ -3,27 +3,11 @@
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { dateKeyFor, mondayOf, buildCalendarDateRow } from "../src/lib/calendar";
 
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
-
-function dateKey(d: Date): number {
-  return Number(
-    `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(
-      d.getUTCDate()
-    ).padStart(2, "0")}`
-  );
-}
-
-function mondayOf(d: Date): Date {
-  const day = d.getUTCDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  const monday = new Date(d);
-  monday.setUTCDate(d.getUTCDate() + diff);
-  monday.setUTCHours(0, 0, 0, 0);
-  return monday;
-}
 
 async function seedCalendar(startDate: Date, weeks: number) {
   const rows = [];
@@ -31,24 +15,7 @@ async function seedCalendar(startDate: Date, weeks: number) {
   for (let i = 0; i < weeks * 7; i++) {
     const d = new Date(cursor);
     d.setUTCDate(cursor.getUTCDate() + i);
-    const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
-    const monthStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-    const quarter = Math.floor(d.getUTCMonth() / 3) + 1;
-    rows.push({
-      dateKey: dateKey(d),
-      date: d,
-      dayName: d.toLocaleDateString("en-GB", { weekday: "long" }),
-      weekNumber: Math.ceil((i + 1) / 7),
-      weekStartDate: mondayOf(d),
-      monthNumber: d.getUTCMonth() + 1,
-      monthName: d.toLocaleDateString("en-GB", { month: "long" }),
-      quarter,
-      fiscalYear: d.getUTCFullYear(),
-      fiscalPeriod: d.getUTCMonth() + 1,
-      isWorkingDay: !isWeekend,
-      isPublicHoliday: false,
-    });
-    void monthStart;
+    rows.push(buildCalendarDateRow(d));
   }
   await db.calendarDate.createMany({ data: rows, skipDuplicates: true });
 }
@@ -425,7 +392,7 @@ async function main() {
   for (let w = 0; w < 12; w++) {
     const weekDate = new Date(firstMonday);
     weekDate.setUTCDate(firstMonday.getUTCDate() + w * 7);
-    const dk = dateKey(weekDate);
+    const dk = dateKeyFor(weekDate);
     const calRow = await db.calendarDate.findUnique({ where: { dateKey: dk } });
     if (!calRow) continue;
 
@@ -465,13 +432,26 @@ async function main() {
       },
     });
 
+  }
+
+  // fact_Capacity's documented grain is monthly (§5.2), unlike the weekly
+  // fact_ForecastAllocation loop above — one row per team per month, not per
+  // week, otherwise monthly aggregates (Available Hours, Utilisation %) would
+  // silently sum several weeks' worth of the same figures into an inflated total.
+  console.log("Seeding monthly capacity...");
+  const CAPACITY_MONTHS = 4;
+  for (let m = 0; m < CAPACITY_MONTHS; m++) {
+    const monthStart = new Date(Date.UTC(firstMonday.getUTCFullYear(), firstMonday.getUTCMonth() + m, 1));
+    const calendarRow = buildCalendarDateRow(monthStart);
+    await db.calendarDate.upsert({ where: { dateKey: calendarRow.dateKey }, update: {}, create: calendarRow });
+
     await db.capacity.upsert({
-      where: { teamId_scenarioId_dateKey: { teamId: teamRotorStator.id, scenarioId: scenarioBaseline.id, dateKey: dk } },
+      where: { teamId_scenarioId_dateKey: { teamId: teamRotorStator.id, scenarioId: scenarioBaseline.id, dateKey: calendarRow.dateKey } },
       update: {},
       create: {
         teamId: teamRotorStator.id,
         scenarioId: scenarioBaseline.id,
-        dateKey: dk,
+        dateKey: calendarRow.dateKey,
         budgetedHeadcount: 12,
         actualHeadcount: 9,
         vacancies: 3,
@@ -489,6 +469,34 @@ async function main() {
         managementOverheadHours: 15,
       },
     });
+
+    // Controls team also carries team-mode demand in this seed (see the
+    // teamId: teamControls.id forecast row above) — give it capacity too so
+    // the utilisation heat map has more than one team to actually show.
+    await db.capacity.upsert({
+      where: { teamId_scenarioId_dateKey: { teamId: teamControls.id, scenarioId: scenarioBaseline.id, dateKey: calendarRow.dateKey } },
+      update: {},
+      create: {
+        teamId: teamControls.id,
+        scenarioId: scenarioBaseline.id,
+        dateKey: calendarRow.dateKey,
+        budgetedHeadcount: 8,
+        actualHeadcount: 7,
+        vacancies: 1,
+        contractorsCount: 0,
+        agencyCount: 0,
+        graduateIntakeCount: 1,
+        futureHiresCount: 0,
+        leaversCount: 0,
+        standardHours: 262.5,
+        trainingHours: 10,
+        businessShutdownHours: 0,
+        holidayHours: 15,
+        internalMeetingHours: 10,
+        bauAllowanceHours: 20,
+        managementOverheadHours: 10,
+      },
+    });
   }
 
   console.log("Seeding recruitment and budget...");
@@ -503,24 +511,11 @@ async function main() {
   });
 
   const firstOfMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  const monthDk = dateKey(firstOfMonth);
+  const monthDk = dateKeyFor(firstOfMonth);
   await db.calendarDate.upsert({
     where: { dateKey: monthDk },
     update: {},
-    create: {
-      dateKey: monthDk,
-      date: firstOfMonth,
-      dayName: firstOfMonth.toLocaleDateString("en-GB", { weekday: "long" }),
-      weekNumber: 1,
-      weekStartDate: mondayOf(firstOfMonth),
-      monthNumber: firstOfMonth.getUTCMonth() + 1,
-      monthName: firstOfMonth.toLocaleDateString("en-GB", { month: "long" }),
-      quarter: Math.floor(firstOfMonth.getUTCMonth() / 3) + 1,
-      fiscalYear: firstOfMonth.getUTCFullYear(),
-      fiscalPeriod: firstOfMonth.getUTCMonth() + 1,
-      isWorkingDay: true,
-      isPublicHoliday: false,
-    },
+    create: buildCalendarDateRow(firstOfMonth),
   });
   await db.budget.upsert({
     where: {

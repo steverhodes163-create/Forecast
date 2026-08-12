@@ -5,6 +5,8 @@ import { logoutAction } from "@/app/actions/auth";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
+  { href: "/team-overview", label: "Team Overview" },
+  { href: "/project-overview", label: "Project Overview" },
   { href: "/employees", label: "Employees" },
   { href: "/departments", label: "Departments" },
   { href: "/teams", label: "Teams" },
