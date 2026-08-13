@@ -1,8 +1,9 @@
 # YASA Resource Forecasting — Web App
 
 Phases 1–4 (Foundations, Master Data & Input, Dashboards, Actuals Import) plus a global
-scenario switcher, dashboard filters, a calendarised per-project forecast grid, and a
-task-driven Gantt chart with critical path scheduling, of the platform described in
+scenario switcher, dashboard filters, a calendarised per-project forecast grid, an
+MSP-style task-driven Gantt chart with critical path scheduling, and self-service task
+completion ("My Tasks") that feeds back into the schedule, of the platform described in
 `../docs/Solution-Architecture.md` (see §0 Platform Decision Addendum for why this is a
 web app rather than an Excel workbook, and what does/doesn't change from the original
 architecture).
@@ -120,10 +121,16 @@ much clearer signal than random pages 500ing in production.
   members, confirms the team subtotal sums correctly, the FTE/Hours toggle changes the
   display, collapsing a month hides its week columns, and removing a team preserves its
   underlying hours (they reappear when the team is re-added).
-- `e2e-gantt.mjs` — builds a 3-task dependency chain, confirms all three are marked
-  critical, assigns an employee to a task and confirms the hours reach the forecast grid's
-  task row, confirms a cycle-creating dependency is rejected with a clear error, and cleans
-  up.
+- `e2e-gantt.mjs` — builds a 3-task dependency chain via the task sheet, confirms all three
+  render as critical, confirms the chart draws dependency connectors, confirms a
+  cycle-creating dependency is rejected with a clear error, and cleans up.
+- `e2e-task-sheet.mjs` — exercises the MSP-shorthand cells directly: Predecessors and
+  Resources parsing (including a task's start correctly shifting to right after its
+  predecessor's finish), a bad task number and an unknown employee name each surfacing a
+  clear inline error, and marking a task done rescheduling its successor.
+- `e2e-my-tasks.mjs` — links the demo login to an employee (restored afterward either way),
+  assigns them a task, confirms it's listed on `/my-tasks`, marks it complete from there, and
+  confirms the Gantt sheet reflects the same completion.
 
 Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `npm run dev`)
 is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
@@ -197,15 +204,15 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   backward pass giving early/late start-finish, slack, and `isCritical`; `weeklyHoursForTask`:
   prorates a task's hours into whichever week they partially overlap). No DB access, verified
   standalone via `scripts/check-scheduling.mjs` (a pure chain, a parallel branch with slack,
-  and the proration math).
+  the proration math, and a completed-task reschedule case — see below).
 - `src/lib/task-service.ts` — `recomputeProjectSchedule(projectId)` re-runs the CPM engine and
   regenerates every task's `taskId`-tagged `ForecastAllocation` rows against whichever
   scenario is currently active, called after every task/dependency/assignment change. If an
   assignee's team was never added to the project's forecast grid, it's added automatically —
   tasks are meant to drive the grid, so the grid always shows what's driving it.
 - `src/components/gantt-chart.tsx` — bars positioned by computed dates, dependency arrows
-  (SVG elbow connectors), critical path in red, a "today" marker. **Read-only in this pass —
-  edit dates via the task form, not by dragging the chart.** Drag-to-resize is an explicit,
+  (SVG elbow connectors), critical path in red, a "today" marker. **Read-only — edit dates via
+  the task sheet below it, not by dragging the chart.** Drag-to-resize is an explicit,
   confirmed-with-the-user follow-up phase once this foundation (data model, CPM engine, and
   correct rendering) is proven out, not a cut corner.
 - Cycle prevention: adding a dependency that would close a loop is rejected server-side
@@ -214,6 +221,39 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   scenario), but the *hours it writes* go into whichever scenario is active when a task is
   saved — a "Recalculate for current scenario" button on the Gantt page re-generates them
   for the scenario you're currently viewing, without changing anything about the task itself.
+
+**MSP-style task sheet:**
+- The Gantt page's task list is a single inline-editable spreadsheet
+  (`src/components/task-sheet.tsx`), not a separate add/edit form — matching Microsoft
+  Project's own task-sheet-drives-everything model. Every cell saves on blur; a blank row at
+  the bottom adds a new task by typing its name.
+- **Predecessors** column: MSP-style shorthand — a comma-separated list of task numbers,
+  optionally with a lag, e.g. `1,3+2d` (depends on tasks #1 and #3, the latter with a 2-day
+  lag). **Resources** column: comma-separated names, optionally with an FTE share, e.g.
+  `Alex Whitfield[50%]` (defaults to 100%). Both are parsed by
+  `src/lib/task-shorthand.ts` (pure, no DB access) and validated server-side — an unknown
+  task number, an unknown employee name, or a cycle-creating dependency all surface as a
+  clear inline error on the cell rather than silently failing.
+- This replaced the earlier form-based "Add task" card and its separate
+  `/gantt/tasks/[id]/edit` page entirely, per explicit confirmation this app's Gantt should
+  behave like MSP's own UI — not interoperate with real Microsoft Project files or Project
+  Online/Project for the Web, which nothing here attempts.
+
+**My Tasks — self-service completion, feeding back into the schedule:**
+- **`/my-tasks`** (in the main nav, visible to everyone) — every task the signed-in user's
+  linked `Employee` record (`User.employeeId`) is personally assigned to, across every
+  project, with duration, computed due date, and a Done checkbox. Empty-state if the account
+  isn't linked to an employee (true for most ADMIN/PMO accounts, by design).
+- `Task.completedAt` — when a task is marked done (from either `/my-tasks` or the Gantt
+  sheet's own Done column), this captures the *actual* finish date. `computeSchedule` then
+  fixes that task's contribution to the schedule to the real finish instead of the planned
+  one, so anything waiting on it reschedules from reality — finished early, its successor
+  moves up; finished late, its successor slips too.
+- Two gates, one shared mutation (`setTaskCompletion` in `src/lib/task-service.ts`): the
+  Gantt sheet's Done column requires the same `ADMIN`/`PMO`/`ENGINEERING_LEAD` role as every
+  other edit there; `/my-tasks`' own checkbox instead requires "the caller is assigned to
+  this task" (`src/app/actions/my-tasks.ts`) — any employee can mark their own work done
+  without needing edit rights over the plan's structure.
 
 ## Not yet built (later phases — see §0 of the architecture doc)
 

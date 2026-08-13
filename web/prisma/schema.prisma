@@ -518,6 +518,7 @@ model Task {
   computedStartDate DateTime?        @db.Date // written by recomputeProjectSchedule (src/lib/task-service.ts)
   computedEndDate   DateTime?        @db.Date
   isCritical        Boolean          @default(false)
+  completedAt       DateTime?        @db.Date // when set, this is the ACTUAL finish -- successors reschedule from it, not the planned computedEndDate
   notes             String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt

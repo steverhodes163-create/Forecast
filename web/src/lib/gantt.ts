@@ -15,8 +15,9 @@ export type GanttTask = {
   slack: number;
   manualDateConflict: boolean;
   manualStartDate: Date | null;
+  completedAt: Date | null;
   notes: string | null;
-  dependsOn: number[];
+  dependsOn: { taskId: number; lagDays: number }[];
   assignees: { employeeId: number; name: string; fte: number }[];
 };
 
@@ -31,7 +32,7 @@ export async function getProjectGantt(projectId: number): Promise<ProjectGantt> 
     db.task.findMany({
       where: { projectId },
       orderBy: { id: "asc" },
-      select: { id: true, name: true, durationDays: true, manualStartDate: true, notes: true },
+      select: { id: true, name: true, durationDays: true, manualStartDate: true, completedAt: true, notes: true },
     }),
     db.taskDependency.findMany({
       where: { predecessorTask: { projectId } },
@@ -44,14 +45,19 @@ export async function getProjectGantt(projectId: number): Promise<ProjectGantt> 
   ]);
 
   const anchorDate = project.startDate ?? new Date();
-  const taskNodes: TaskNode[] = tasks.map((t) => ({ id: t.id, durationDays: t.durationDays, manualStartDate: t.manualStartDate }));
+  const taskNodes: TaskNode[] = tasks.map((t) => ({
+    id: t.id,
+    durationDays: t.durationDays,
+    manualStartDate: t.manualStartDate,
+    completedAt: t.completedAt,
+  }));
   const depEdges: DependencyEdge[] = dependencies;
   const schedule = computeSchedule(taskNodes, depEdges, anchorDate);
 
-  const dependsOnByTask = new Map<number, number[]>();
+  const dependsOnByTask = new Map<number, { taskId: number; lagDays: number }[]>();
   for (const d of dependencies) {
     const list = dependsOnByTask.get(d.successorTaskId) ?? [];
-    list.push(d.predecessorTaskId);
+    list.push({ taskId: d.predecessorTaskId, lagDays: d.lagDays });
     dependsOnByTask.set(d.successorTaskId, list);
   }
   const assignmentsByTask = new Map<number, { employeeId: number; name: string; fte: number }[]>();
@@ -73,6 +79,7 @@ export async function getProjectGantt(projectId: number): Promise<ProjectGantt> 
       slack: s?.slack ?? 0,
       manualDateConflict: s?.manualDateConflict ?? false,
       manualStartDate: t.manualStartDate,
+      completedAt: t.completedAt,
       notes: t.notes,
       dependsOn: dependsOnByTask.get(t.id) ?? [],
       assignees: assignmentsByTask.get(t.id) ?? [],

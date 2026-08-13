@@ -47,7 +47,7 @@ export function GanttChart({ tasks }: { tasks: GanttTask[] }) {
   const connectors: { path: string; critical: boolean }[] = [];
   for (const t of sorted) {
     const succRect = barRect(t);
-    for (const predId of t.dependsOn) {
+    for (const { taskId: predId } of t.dependsOn) {
       const pred = sorted.find((p) => p.id === predId);
       if (!pred) continue;
       const predRect = barRect(pred);

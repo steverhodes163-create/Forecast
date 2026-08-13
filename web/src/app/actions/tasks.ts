@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession, hasRole } from "@/lib/auth";
-import { recomputeProjectSchedule } from "@/lib/task-service";
+import { recomputeProjectSchedule, setTaskCompletion } from "@/lib/task-service";
+import { parsePredecessors, parseResources } from "@/lib/task-shorthand";
 
-export type FormState = { error?: string } | undefined;
+type ActionResult = { ok: true } | { error: string };
 
 async function requireEditor() {
   const session = await getSession();
@@ -15,10 +16,10 @@ async function requireEditor() {
   }
 }
 
-function requiredInt(formData: FormData, name: string, label: string): number {
-  const raw = formData.get(name);
-  if (!raw) throw new Error(`${label} is required.`);
-  return parseInt(String(raw), 10);
+function revalidateProject(projectId: number) {
+  revalidatePath(`/projects/${projectId}/gantt`);
+  revalidatePath(`/projects/${projectId}/forecast`);
+  revalidatePath("/my-tasks");
 }
 
 // Would adding predecessorId -> successorId close a loop? True if
@@ -56,90 +57,139 @@ async function wouldCreateCycle(
   return false;
 }
 
-// Replaces a task's dependencies + assignments from form data (used by both
-// create and update). Cycle-checks every proposed dependency against the
-// graph with this task's own current incoming edges removed, and aborts
-// without writing anything if any would close a loop.
-async function saveTaskGraph(taskId: number, projectId: number, formData: FormData): Promise<void> {
-  const dependsOnIds = Array.from(new Set(formData.getAll("dependsOn").map((v) => parseInt(String(v), 10)))).filter(
-    (n) => !Number.isNaN(n) && n !== taskId
-  );
-  for (const predecessorId of dependsOnIds) {
-    if (await wouldCreateCycle(projectId, predecessorId, taskId, taskId)) {
-      throw new Error("That dependency would create a circular dependency between tasks.");
-    }
-  }
-  await db.taskDependency.deleteMany({ where: { successorTaskId: taskId } });
-  if (dependsOnIds.length > 0) {
-    await db.taskDependency.createMany({ data: dependsOnIds.map((predecessorId) => ({ predecessorTaskId: predecessorId, successorTaskId: taskId })) });
-  }
-
-  const assigneeIds = Array.from(new Set(formData.getAll("assignee").map((v) => parseInt(String(v), 10)))).filter((n) => !Number.isNaN(n));
-  await db.taskAssignment.deleteMany({ where: { taskId } });
-  if (assigneeIds.length > 0) {
-    await db.taskAssignment.createMany({
-      data: assigneeIds.map((employeeId) => {
-        const fteRaw = formData.get(`fte_${employeeId}`);
-        const fte = fteRaw ? Number(fteRaw) : 1;
-        return { taskId, employeeId, fte: fte.toFixed(3) };
-      }),
-    });
-  }
-}
-
-function taskFields(formData: FormData) {
-  const name = String(formData.get("name") ?? "").trim();
-  if (!name) throw new Error("Task name is required.");
-  const durationDays = requiredInt(formData, "durationDays", "Duration");
-  if (durationDays < 1) throw new Error("Duration must be at least 1 working day.");
-  const manualStartRaw = formData.get("manualStartDate");
-  const manualStartDate = manualStartRaw ? new Date(String(manualStartRaw)) : null;
-  const notes = formData.get("notes") ? String(formData.get("notes")) : null;
-  return { name, durationDays, manualStartDate, notes };
-}
-
-export async function createTaskAction(_prevState: FormState, formData: FormData): Promise<FormState> {
-  const projectId = requiredInt(formData, "projectId", "Project");
+export async function createBlankTaskAction(input: { projectId: number; name: string }): Promise<ActionResult & { taskId?: number }> {
+  const { projectId } = input;
   try {
     await requireEditor();
-    const task = await db.task.create({ data: { projectId, ...taskFields(formData) } });
-    await saveTaskGraph(task.id, projectId, formData);
+    const name = input.name.trim();
+    if (!name) throw new Error("Task name is required.");
+    const task = await db.task.create({ data: { projectId, name, durationDays: 1 } });
     await recomputeProjectSchedule(projectId);
+    revalidateProject(projectId);
+    return { ok: true, taskId: task.id };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not create task." };
   }
-  revalidatePath(`/projects/${projectId}/gantt`);
-  revalidatePath(`/projects/${projectId}/forecast`);
-  redirect(`/projects/${projectId}/gantt`);
 }
 
-export async function updateTaskAction(taskId: number, _prevState: FormState, formData: FormData): Promise<FormState> {
-  const projectId = requiredInt(formData, "projectId", "Project");
+export async function setTaskNameAction(input: { taskId: number; projectId: number; name: string }): Promise<ActionResult> {
+  const { taskId, projectId } = input;
   try {
     await requireEditor();
-    await db.task.update({ where: { id: taskId }, data: taskFields(formData) });
-    await saveTaskGraph(taskId, projectId, formData);
+    const name = input.name.trim();
+    if (!name) throw new Error("Task name is required.");
+    await db.task.update({ where: { id: taskId }, data: { name } });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not rename task." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
+}
+
+export async function setTaskDurationAction(input: { taskId: number; projectId: number; raw: string }): Promise<ActionResult> {
+  const { taskId, projectId } = input;
+  try {
+    await requireEditor();
+    const cleaned = input.raw.trim().replace(/d(ays?)?$/i, "").trim();
+    const days = parseInt(cleaned, 10);
+    if (Number.isNaN(days) || days < 1) throw new Error(`"${input.raw}" isn't a valid duration — try "5" or "5d".`);
+    await db.task.update({ where: { id: taskId }, data: { durationDays: days } });
     await recomputeProjectSchedule(projectId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not update duration." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
+}
+
+export async function setTaskPredecessorsAction(input: { taskId: number; projectId: number; raw: string }): Promise<ActionResult> {
+  const { taskId, projectId, raw } = input;
+  try {
+    await requireEditor();
+    const parsed = parsePredecessors(raw);
+    if ("error" in parsed) throw new Error(parsed.error);
+
+    const validIds = new Set((await db.task.findMany({ where: { projectId }, select: { id: true } })).map((t) => t.id));
+    for (const token of parsed.tokens) {
+      if (!validIds.has(token.taskId)) throw new Error(`No task #${token.taskId} on this project.`);
+      if (await wouldCreateCycle(projectId, token.taskId, taskId, taskId)) {
+        throw new Error(`Task #${token.taskId} would create a circular dependency.`);
+      }
+    }
+
+    await db.taskDependency.deleteMany({ where: { successorTaskId: taskId } });
+    if (parsed.tokens.length > 0) {
+      await db.taskDependency.createMany({
+        data: parsed.tokens.map((t) => ({ predecessorTaskId: t.taskId, successorTaskId: taskId, lagDays: t.lagDays })),
+      });
+    }
+    await recomputeProjectSchedule(projectId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not update dependencies." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
+}
+
+export async function setTaskResourcesAction(input: { taskId: number; projectId: number; raw: string }): Promise<ActionResult> {
+  const { taskId, projectId, raw } = input;
+  try {
+    await requireEditor();
+    const parsed = parseResources(raw);
+    if ("error" in parsed) throw new Error(parsed.error);
+
+    const employees = await db.employee.findMany({ select: { id: true, name: true } });
+    const byNameLower = new Map(employees.map((e) => [e.name.toLowerCase(), e.id]));
+    const resolved: { employeeId: number; fte: number }[] = [];
+    const unmatched: string[] = [];
+    for (const token of parsed.tokens) {
+      const employeeId = byNameLower.get(token.name.toLowerCase());
+      if (employeeId === undefined) unmatched.push(token.name);
+      else resolved.push({ employeeId, fte: token.pct / 100 });
+    }
+    if (unmatched.length > 0) {
+      throw new Error(`Unknown employee${unmatched.length > 1 ? "s" : ""}: ${unmatched.join(", ")}`);
+    }
+
+    await db.taskAssignment.deleteMany({ where: { taskId } });
+    if (resolved.length > 0) {
+      await db.taskAssignment.createMany({
+        data: resolved.map((r) => ({ taskId, employeeId: r.employeeId, fte: r.fte.toFixed(3) })),
+      });
+    }
+    await recomputeProjectSchedule(projectId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not update resources." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
+}
+
+export async function markTaskDoneAction(input: { taskId: number; projectId: number; completed: boolean }): Promise<ActionResult> {
+  try {
+    await requireEditor();
+    await setTaskCompletion(input.taskId, input.completed);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not update task." };
   }
-  revalidatePath(`/projects/${projectId}/gantt`);
-  revalidatePath(`/projects/${projectId}/forecast`);
-  redirect(`/projects/${projectId}/gantt`);
+  revalidateProject(input.projectId);
+  return { ok: true };
 }
 
-export async function deleteTaskAction(formData: FormData) {
-  await requireEditor();
-  const taskId = Number(formData.get("taskId"));
-  const task = await db.task.findUniqueOrThrow({ where: { id: taskId }, select: { projectId: true } });
-  await db.forecastAllocation.deleteMany({ where: { taskId } });
-  await db.taskAssignment.deleteMany({ where: { taskId } });
-  await db.taskDependency.deleteMany({ where: { OR: [{ predecessorTaskId: taskId }, { successorTaskId: taskId }] } });
-  await db.task.delete({ where: { id: taskId } });
-  await recomputeProjectSchedule(task.projectId);
-  revalidatePath(`/projects/${task.projectId}/gantt`);
-  revalidatePath(`/projects/${task.projectId}/forecast`);
-  redirect(`/projects/${task.projectId}/gantt`);
+export async function deleteTaskAction(input: { taskId: number; projectId: number }): Promise<ActionResult> {
+  const { taskId, projectId } = input;
+  try {
+    await requireEditor();
+    await db.forecastAllocation.deleteMany({ where: { taskId } });
+    await db.taskAssignment.deleteMany({ where: { taskId } });
+    await db.taskDependency.deleteMany({ where: { OR: [{ predecessorTaskId: taskId }, { successorTaskId: taskId }] } });
+    await db.task.delete({ where: { id: taskId } });
+    await recomputeProjectSchedule(projectId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not delete task." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
 }
 
 // Re-runs hours generation against whichever scenario is currently active,
@@ -149,7 +199,6 @@ export async function recalculateScheduleAction(formData: FormData) {
   await requireEditor();
   const projectId = Number(formData.get("projectId"));
   await recomputeProjectSchedule(projectId);
-  revalidatePath(`/projects/${projectId}/gantt`);
-  revalidatePath(`/projects/${projectId}/forecast`);
+  revalidateProject(projectId);
   redirect(`/projects/${projectId}/gantt`);
 }

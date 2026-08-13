@@ -15,6 +15,7 @@ export type TaskNode = {
   id: number;
   durationDays: number;
   manualStartDate: Date | null;
+  completedAt: Date | null; // when set, this is the task's ACTUAL finish -- fixes earlyFinish for propagation to successors, planned or not
 };
 
 export type DependencyEdge = {
@@ -125,7 +126,11 @@ export function computeSchedule(
       else if (manualOffset < es) conflict = true;
     }
     earlyStart.set(id, es);
-    earlyFinish.set(id, es + task.durationDays);
+    // A completed task's finish is a fact, not an estimate -- successors
+    // reschedule from when the work actually finished (early or late),
+    // overriding the planned es + durationDays.
+    const ef = task.completedAt ? workingDaysBetween(anchorDate, task.completedAt) + 1 : es + task.durationDays;
+    earlyFinish.set(id, ef);
     manualConflict.set(id, conflict);
   }
 

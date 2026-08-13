@@ -4,9 +4,9 @@ const anchor = new Date(Date.UTC(2026, 7, 3)); // Monday 2026-08-03
 
 // A(5d) -> B(3d) -> C(2d), pure chain, no lag
 const tasks = [
-  { id: 1, durationDays: 5, manualStartDate: null },
-  { id: 2, durationDays: 3, manualStartDate: null },
-  { id: 3, durationDays: 2, manualStartDate: null },
+  { id: 1, durationDays: 5, manualStartDate: null, completedAt: null },
+  { id: 2, durationDays: 3, manualStartDate: null, completedAt: null },
+  { id: 3, durationDays: 2, manualStartDate: null, completedAt: null },
 ];
 const deps = [
   { predecessorTaskId: 1, successorTaskId: 2, lagDays: 0 },
@@ -28,10 +28,10 @@ console.log("All critical (pure chain, no slack anywhere):", tasks.every((t) => 
 
 // Parallel branch: D(4d) alongside A->B (8d), both feeding E(1d). D should have slack, chain should be critical.
 const tasks2 = [
-  { id: 1, durationDays: 5, manualStartDate: null },
-  { id: 2, durationDays: 3, manualStartDate: null },
-  { id: 4, durationDays: 4, manualStartDate: null },
-  { id: 5, durationDays: 1, manualStartDate: null },
+  { id: 1, durationDays: 5, manualStartDate: null, completedAt: null },
+  { id: 2, durationDays: 3, manualStartDate: null, completedAt: null },
+  { id: 4, durationDays: 4, manualStartDate: null, completedAt: null },
+  { id: 5, durationDays: 1, manualStartDate: null, completedAt: null },
 ];
 const deps2 = [
   { predecessorTaskId: 1, successorTaskId: 2, lagDays: 0 },
@@ -53,3 +53,26 @@ const wedStart = new Date(Date.UTC(2026, 7, 5));
 const friEnd = new Date(Date.UTC(2026, 7, 7));
 const hrs = weeklyHoursForTask(wedStart, friEnd, weekMon, 37.5);
 console.log("\nProration check: 3/5 days of 37.5hr week =", hrs, " expected 22.5:", hrs === 22.5);
+
+// Completed-task rescheduling: A(5d) planned Mon-Fri (05-09 Aug) -> B(3d).
+// If A actually finishes EARLY (Wed 05 Aug) or LATE (the following Wed 12
+// Aug), B should reschedule from the actual finish, not the plan.
+console.log("\nCompleted-task rescheduling:");
+const chainTasks = (completedAt) => [
+  { id: 1, durationDays: 5, manualStartDate: null, completedAt },
+  { id: 2, durationDays: 3, manualStartDate: null, completedAt: null },
+];
+const chainDeps = [{ predecessorTaskId: 1, successorTaskId: 2, lagDays: 0 }];
+
+const plannedSchedule = computeSchedule(chainTasks(null), chainDeps, anchor);
+console.log("  planned B start:", plannedSchedule.get(2).startDate.toISOString().slice(0, 10), "(expect 2026-08-10, Monday after A's planned Fri finish)");
+
+const earlyFinish = new Date(Date.UTC(2026, 7, 5)); // Wed 05 Aug, 3 days into a 5-day task
+const earlySchedule = computeSchedule(chainTasks(earlyFinish), chainDeps, anchor);
+const earlyBStart = earlySchedule.get(2).startDate.toISOString().slice(0, 10);
+console.log("  A finishes early (05 Aug) -> B start:", earlyBStart, " expected 2026-08-06:", earlyBStart === "2026-08-06");
+
+const lateFinish = new Date(Date.UTC(2026, 7, 12)); // Wed the following week
+const lateSchedule = computeSchedule(chainTasks(lateFinish), chainDeps, anchor);
+const lateBStart = lateSchedule.get(2).startDate.toISOString().slice(0, 10);
+console.log("  A finishes late (12 Aug) -> B start:", lateBStart, " expected 2026-08-13:", lateBStart === "2026-08-13");

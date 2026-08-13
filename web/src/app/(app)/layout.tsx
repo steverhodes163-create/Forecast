@@ -7,6 +7,7 @@ import { ScenarioSwitcher } from "@/components/scenario-switcher";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
+  { href: "/my-tasks", label: "My Tasks" },
   { href: "/team-overview", label: "Team Overview" },
   { href: "/project-overview", label: "Project Overview" },
   { href: "/employees", label: "Employees" },

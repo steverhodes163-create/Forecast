@@ -31,7 +31,7 @@ async function ensureWeeksExist(mondays: Date[]): Promise<number[]> {
 export async function recomputeProjectSchedule(projectId: number): Promise<void> {
   const [project, tasks, assignments, dependencies] = await Promise.all([
     db.project.findUniqueOrThrow({ where: { id: projectId }, select: { startDate: true } }),
-    db.task.findMany({ where: { projectId }, select: { id: true, durationDays: true, manualStartDate: true } }),
+    db.task.findMany({ where: { projectId }, select: { id: true, durationDays: true, manualStartDate: true, completedAt: true } }),
     db.taskAssignment.findMany({
       where: { task: { projectId } },
       select: { taskId: true, employeeId: true, fte: true, employee: { select: { standardWeeklyHours: true, teamId: true } } },
@@ -43,7 +43,12 @@ export async function recomputeProjectSchedule(projectId: number): Promise<void>
   ]);
 
   const anchor = project.startDate ?? new Date();
-  const taskNodes: TaskNode[] = tasks.map((t) => ({ id: t.id, durationDays: t.durationDays, manualStartDate: t.manualStartDate }));
+  const taskNodes: TaskNode[] = tasks.map((t) => ({
+    id: t.id,
+    durationDays: t.durationDays,
+    manualStartDate: t.manualStartDate,
+    completedAt: t.completedAt,
+  }));
   const depEdges: DependencyEdge[] = dependencies;
   const schedule = computeSchedule(taskNodes, depEdges, anchor);
 
@@ -116,4 +121,14 @@ export async function recomputeProjectSchedule(projectId: number): Promise<void>
       await db.forecastAllocation.createMany({ data: rows });
     }
   }
+}
+
+// Marks a task done (or undoes that) and reschedules the project from the
+// actual finish date. Shared by the Gantt sheet's "Done" checkbox
+// (editor-gated) and the My Tasks page (assignee-gated) -- both call this
+// after their own permission check, never this alone.
+export async function setTaskCompletion(taskId: number, completed: boolean): Promise<void> {
+  const task = await db.task.findUniqueOrThrow({ where: { id: taskId }, select: { projectId: true } });
+  await db.task.update({ where: { id: taskId }, data: { completedAt: completed ? new Date() : null } });
+  await recomputeProjectSchedule(task.projectId);
 }
