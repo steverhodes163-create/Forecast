@@ -34,6 +34,16 @@ non-local use).
 To reseed from a clean slate, use `npx prisma migrate reset` (destructive — drops and
 recreates the local dev database; never run against a shared/production database).
 
+**Deployed (Vercel) database stays in sync automatically:** the `build` script is
+`prisma migrate deploy && next build`, so every deployment applies any pending migrations
+against whichever `DATABASE_URL` that environment has configured before building — the
+standard pattern for Prisma + CI/CD. This is what previously required manually opening a
+GitHub Codespace and running `prisma migrate deploy` by hand after each schema change; now
+a normal push (or clicking Redeploy in Vercel) does it. If a migration fails, the whole
+build fails loudly in the Vercel build log instead of deploying successfully and then
+breaking pages at runtime — a deliberate trade, since a build that won't ship at all is a
+much clearer signal than random pages 500ing in production.
+
 ## What's here
 
 **Phase 1 (Foundations):**
