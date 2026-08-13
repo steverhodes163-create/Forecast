@@ -57,6 +57,9 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
             </Cell>
             <Cell align="right">
               <div className="flex justify-end gap-2">
+                <Link href={`/projects/${p.id}/forecast`} className="text-xs font-medium text-slate-500 hover:text-slate-900">
+                  Forecast grid
+                </Link>
                 <Link href={`/projects/${p.id}/edit`} className="text-xs font-medium text-slate-500 hover:text-slate-900">
                   Edit
                 </Link>

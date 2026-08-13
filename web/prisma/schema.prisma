@@ -77,6 +77,7 @@ model Team {
   capacities         Capacity[]
   recruitments       Recruitment[]
   scenarioAdjustments ScenarioAdjustment[]
+  projectTeams       ProjectTeam[]
 
   @@unique([departmentId, name])
 }
@@ -327,9 +328,24 @@ model Project {
   forecastAllocations     ForecastAllocation[]
   actualAllocations       ActualAllocation[]
   scenarioAdjustments     ScenarioAdjustment[]
+  projectTeams            ProjectTeam[]
 
   @@index([projectStatusId])
   @@index([businessUnitId])
+}
+
+// Which teams appear on a project's calendarised forecast grid (§7) --
+// persisted independently of ForecastAllocation rows so a newly-added team
+// shows all its members as blank/zero cells before any hours are entered.
+model ProjectTeam {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  project   Project  @relation(fields: [projectId], references: [id])
+  teamId    Int
+  team      Team     @relation(fields: [teamId], references: [id])
+  addedAt   DateTime @default(now())
+
+  @@unique([projectId, teamId])
 }
 
 model ResourceType {
@@ -473,6 +489,11 @@ model ForecastAllocation {
   @@index([employeeId])
   @@index([teamId])
   @@index([skillId])
+  // Identity of a calendarised forecast grid cell (§7 employee-mode entry
+  // scoped to a project) -- lets the grid upsert a cell directly. NULLs are
+  // distinct in Postgres unique indexes, so team-mode/skill-mode rows
+  // (employeeId IS NULL) are unaffected.
+  @@unique([scenarioId, employeeId, projectId, dateKey, resourceTypeId, forecastSourceId], name: "gridCell")
 }
 
 model ActualAllocation {

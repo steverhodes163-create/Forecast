@@ -1,7 +1,8 @@
 # YASA Resource Forecasting — Web App
 
 Phases 1–4 (Foundations, Master Data & Input, Dashboards, Actuals Import) plus a global
-scenario switcher and dashboard filters, of the platform described in
+scenario switcher, dashboard filters, and a calendarised per-project forecast grid, of the
+platform described in
 `../docs/Solution-Architecture.md` (see §0 Platform Decision Addendum for why this is a
 web app rather than an Excel workbook, and what does/doesn't change from the original
 architecture).
@@ -104,6 +105,12 @@ recreates the local dev database; never run against a shared/production database
 - `e2e-imports.mjs` — uploads a CSV with one valid row and two intentionally-bad rows,
   confirms the valid row loads and both bad rows land in the exceptions queue with the
   right reasons.
+- `e2e-scenario.mjs`, `e2e-filters.mjs` — the global scenario switcher (including the
+  locked-scenario fallback on entry forms) and each dashboard's filters.
+- `e2e-forecast-grid.mjs` — add a team to a project's grid, enter marker hours for two
+  members, confirms the team subtotal sums correctly, the FTE/Hours toggle changes the
+  display, collapsing a month hides its week columns, and removing a team preserves its
+  underlying hours (they reappear when the team is re-added).
 
 Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `npm run dev`)
 is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
@@ -127,7 +134,42 @@ yourself.
 - `e2e-scenario.mjs`, `e2e-filters.mjs` — cover switching scenarios (including the locked-
   scenario fallback on entry forms) and each dashboard's filters.
 
+**Calendarised forecast grid (§7 employee-mode entry, per project):**
+- **`/projects/[id]/forecast`** (linked from the Projects list) — a spreadsheet-style view
+  for entering a whole project's staffing plan in one place instead of one row at a time via
+  `/forecast`: teams down the rows (expandable to their members), months across the columns
+  (expandable to their weeks). Team and month values are always computed rollups of their
+  members/weeks — never separately entered — matching the "Mech Eng 0.9 = Dave 0.2 + Harry
+  0.3 + Gary 0.4" style of a manual planning spreadsheet.
+- `ProjectTeam` (`prisma/schema.prisma`) — a new bridge table recording which teams are "on"
+  a project's grid, independent of whether any hours exist yet, so a newly-added team shows
+  all its members as blank rows ready for input rather than requiring an existing allocation
+  first. Removing a team from the grid only deletes this marker row — any hours already
+  entered stay in `ForecastAllocation` and reappear if the team is re-added.
+- A new compound unique constraint on `ForecastAllocation` (`@@unique([scenarioId,
+  employeeId, projectId, dateKey, resourceTypeId, forecastSourceId], name: "gridCell")`)
+  gives each grid cell a stable identity to upsert against, the same pattern `Capacity`
+  already used for its team/scenario/month upsert. It's scoped by `resourceTypeId` +
+  `forecastSourceId` (always the seeded "Employee"/"Project" pair for grid writes) so it
+  never collides with — or overwrites — a manually-entered row logged against a different
+  source (e.g. "Annual Leave") for the same employee/week.
+- `src/lib/forecast-grid.ts` — `ensureCalendarWeeksInRange` generates the month/week column
+  structure for a rolling window and lazily ensures the underlying `CalendarDate` rows exist
+  (same idea as the Capacity form's single-row version, generalised to a range); `getProjectForecastGrid`
+  loads a project's teams → members and their hours into that structure.
+- `src/components/forecast-grid.tsx` — the grid itself. Edits save per cell on blur (no
+  separate "Save" step); an FTE/Hours toggle converts every cell through each employee's own
+  `standardWeeklyHours` (hours are always what's stored — FTE is display-only, computed on
+  the fly); only the finest visible grain is ever editable — a collapsed month or a team row
+  is a read-only sum, exactly like Excel's "roll up, don't duplicate" convention.
+- Not built yet: a cross-project *per-team* rollup view (a team's total committed time across
+  all its projects) — the natural companion read-only report once this entry grid is
+  established. Task/Gantt linkage (hours flowing up from a future timing-plan/task
+  breakdown) is explicitly deferred; nothing here precludes adding an optional `taskId` to
+  `ForecastAllocation` later.
+
 ## Not yet built (later phases — see §0 of the architecture doc)
 
 The §7.4 what-if UI (scenario adjustments — the data model for it, `ScenarioAdjustment`,
-already exists). Hardening and UAT (§16 Phase 9-10) haven't started.
+already exists), and the cross-project per-team rollup view and Task/Gantt linkage noted
+above. Hardening and UAT (§16 Phase 9-10) haven't started.
