@@ -4,19 +4,23 @@ import { ManhattanChart } from "@/components/charts/ManhattanChart";
 import { DemandWaterfall } from "@/components/charts/DemandWaterfall";
 import { UtilisationHeatmap } from "@/components/charts/UtilisationHeatmap";
 import { ForecastAccuracyChart } from "@/components/charts/ForecastAccuracyChart";
+import { DashboardFilterBar } from "@/components/dashboard-filter-bar";
 import { Card } from "@/components/page";
 
-async function getOverview() {
+async function getOverview(teamId?: number) {
   const [employeeCount, projectCount, teamCount, openRequisitions, allocationCount] = await Promise.all([
-    db.employee.count({ where: { status: { name: "Active" } } }),
+    db.employee.count({ where: { status: { name: "Active" }, ...(teamId ? { teamId } : {}) } }),
     db.project.count({ where: { NOT: { projectStatus: { name: "Cancelled" } } } }),
-    db.team.count(),
-    db.recruitment.count({ where: { NOT: { recruitmentStatus: { name: { in: ["Cancelled", "Started"] } } } } }),
-    db.forecastAllocation.count(),
+    teamId ? Promise.resolve(1) : db.team.count(),
+    db.recruitment.count({
+      where: { NOT: { recruitmentStatus: { name: { in: ["Cancelled", "Started"] } } }, ...(teamId ? { teamId } : {}) },
+    }),
+    db.forecastAllocation.count({ where: teamId ? { teamId } : undefined }),
   ]);
 
   const recentAllocations = await db.forecastAllocation.findMany({
     take: 6,
+    where: teamId ? { teamId } : undefined,
     orderBy: { dateKey: "desc" },
     include: {
       project: { select: { name: true } },
@@ -37,12 +41,16 @@ function allocationTarget(a: Awaited<ReturnType<typeof getOverview>>["recentAllo
   return "—";
 }
 
-export default async function DashboardPage() {
-  const [overview, monthly, bridge, heatmap, actualsExist] = await Promise.all([
-    getOverview(),
-    getMonthlyDemandVsCapacity({ months: 6 }),
-    getDemandBridge(),
-    getUtilisationHeatmap(6),
+export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
+  const { teamId: teamIdParam } = await searchParams;
+  const teamId = teamIdParam ? Number(teamIdParam) : undefined;
+
+  const [teams, overview, monthly, bridge, heatmap, actualsExist] = await Promise.all([
+    db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getOverview(teamId),
+    getMonthlyDemandVsCapacity({ months: 6, teamId }),
+    getDemandBridge({ teamId }),
+    getUtilisationHeatmap(6, { teamId }),
     hasAnyActuals(),
   ]);
   const accuracy = actualsExist ? await getForecastAccuracy(6) : null;
@@ -65,9 +73,20 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-lg font-semibold text-slate-900">Business Overview</h1>
         <p className="mt-1 text-sm text-slate-500">
-          §9 Business Overview — live from the relational model, Baseline scenario, next 6 months.
+          §9 Business Overview — live from the relational model, {teamId ? "filtered" : "all teams"}, next 6 months.
         </p>
       </div>
+
+      <DashboardFilterBar
+        filters={[
+          {
+            name: "teamId",
+            label: "Team",
+            value: teamId ? String(teamId) : "",
+            options: teams.map((t) => ({ value: String(t.id), label: t.name })),
+          },
+        ]}
+      />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {kpis.map((k) => (
@@ -82,7 +101,7 @@ export default async function DashboardPage() {
         <div className="lg:col-span-2">
           <Card>
             <h2 className="mb-1 text-sm font-semibold text-slate-900">Demand vs capacity</h2>
-            <p className="mb-4 text-xs text-slate-400">Manhattan chart (§9) — booked hours against available hours, all teams.</p>
+            <p className="mb-4 text-xs text-slate-400">Manhattan chart (§9) — booked hours against available hours.</p>
             <ManhattanChart data={monthly} />
           </Card>
         </div>
@@ -146,6 +165,15 @@ export default async function DashboardPage() {
                   <td className="px-4 py-2 text-right tabular-nums text-slate-700">{a.hours.toString()}</td>
                 </tr>
               ))}
+              {overview.recentAllocations.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-2 text-slate-400" colSpan={5}>
+                    {teamId
+                      ? "No Team-mode allocations for this team. Employee/Skill-mode demand from this team's members isn't attributed to the team directly (§17 of the architecture doc) — check Forecast for the full picture."
+                      : "No allocations yet."}
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

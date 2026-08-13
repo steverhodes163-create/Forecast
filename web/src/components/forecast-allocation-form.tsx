@@ -16,6 +16,7 @@ const MODES = [
 export function ForecastAllocationForm({
   action,
   refData,
+  defaultScenarioId,
 }: {
   action: Action;
   refData: {
@@ -28,6 +29,7 @@ export function ForecastAllocationForm({
     forecastSources: Option[];
     weeks: { dateKey: number; date: Date | string; weekNumber: number }[];
   };
+  defaultScenarioId?: number;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(action, undefined);
   const [mode, setMode] = useState<"team" | "employee" | "skill">("team");
@@ -73,7 +75,7 @@ export function ForecastAllocationForm({
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <SelectField name="scenarioId" label="Scenario" required options={opts(refData.scenarios)} />
+        <SelectField name="scenarioId" label="Scenario" required defaultValue={defaultScenarioId} options={opts(refData.scenarios)} />
         <SelectField name="projectId" label="Project" allowEmpty="— none —" options={opts(refData.projects)} />
         <SelectField name="forecastSourceId" label="Forecast source" required options={opts(refData.forecastSources)} />
         <SelectField name="resourceTypeId" label="Resource type" required options={opts(refData.resourceTypes)} />

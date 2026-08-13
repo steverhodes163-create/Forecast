@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { createForecastAllocationAction, deleteForecastAllocationAction } from "@/app/actions/forecast";
 import { getForecastFormRefData } from "@/lib/forecast-ref-data";
+import { getActiveScenarioId } from "@/lib/scenario";
 import { Card, DataTable, PageHeader, Row, Cell } from "@/components/page";
 import { ForecastAllocationForm } from "@/components/forecast-allocation-form";
 import { DeleteButton } from "@/components/form";
@@ -14,8 +15,9 @@ function allocationTarget(a: { employee: { name: string } | null; team: { name: 
 
 export default async function ForecastPage({ searchParams }: PageProps<"/forecast">) {
   const { error } = await searchParams;
-  const [refData, allocations] = await Promise.all([
+  const [refData, activeScenarioId, allocations] = await Promise.all([
     getForecastFormRefData(),
+    getActiveScenarioId(),
     db.forecastAllocation.findMany({
       take: 50,
       orderBy: { id: "desc" },
@@ -77,7 +79,7 @@ export default async function ForecastPage({ searchParams }: PageProps<"/forecas
 
         <Card>
           <h2 className="mb-4 text-sm font-semibold text-slate-900">Add allocation</h2>
-          <ForecastAllocationForm action={createForecastAllocationAction} refData={refData} />
+          <ForecastAllocationForm action={createForecastAllocationAction} refData={refData} defaultScenarioId={activeScenarioId ?? undefined} />
         </Card>
       </div>
     </div>

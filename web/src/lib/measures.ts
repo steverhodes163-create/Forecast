@@ -5,6 +5,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { buildCalendarDateRow } from "@/lib/calendar";
+import { getActiveScenarioId } from "@/lib/scenario";
 
 export function monthKeyOf(dateKey: number): string {
   const s = String(dateKey);
@@ -36,13 +37,6 @@ export function recentMonthKeys(count: number): string[] {
     keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
   }
   return keys;
-}
-
-async function defaultScenarioId(): Promise<number | null> {
-  const scenario =
-    (await db.scenario.findFirst({ where: { name: "Baseline" } })) ??
-    (await db.scenario.findFirst({ where: { isActive: true }, orderBy: { id: "asc" } }));
-  return scenario?.id ?? null;
 }
 
 // §7.2: Available Hours = Standard − (Training + Shutdown + Holiday + InternalMeeting + BAUAllowance + ManagementOverhead)
@@ -81,7 +75,7 @@ export type MonthlyDemandCapacity = {
  * from monthly fact_Capacity rows — the two grains are joined on "YYYY-MM".
  */
 export async function getMonthlyDemandVsCapacity(opts: { months: number; teamId?: number }): Promise<MonthlyDemandCapacity[]> {
-  const scenarioId = await defaultScenarioId();
+  const scenarioId = await getActiveScenarioId();
   const monthKeys = upcomingMonthKeys(opts.months);
   if (!scenarioId) return monthKeys.map((k) => ({ monthKey: k, label: monthLabel(k), demandHours: 0, availableHours: 0 }));
 
@@ -131,18 +125,27 @@ export type TeamMonthUtilisation = {
 };
 
 /** Utilisation % (§7.2) per team, per month — the heat map's data. */
-export async function getUtilisationHeatmap(months: number): Promise<TeamMonthUtilisation[]> {
-  const scenarioId = await defaultScenarioId();
+export async function getUtilisationHeatmap(months: number, opts?: { teamId?: number }): Promise<TeamMonthUtilisation[]> {
+  const scenarioId = await getActiveScenarioId();
   const monthKeys = upcomingMonthKeys(months);
-  const teams = await db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const teams = await db.team.findMany({
+    where: opts?.teamId ? { id: opts.teamId } : undefined,
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
   if (!scenarioId) {
     return teams.map((t) => ({ teamId: t.id, teamName: t.name, months: monthKeys.map((k) => ({ monthKey: k, label: monthLabel(k), utilisationPct: null })) }));
   }
 
   const [allocations, capacities] = await Promise.all([
-    db.forecastAllocation.findMany({ where: { scenarioId, teamId: { not: null } }, select: { dateKey: true, teamId: true, hours: true } }),
+    db.forecastAllocation.findMany({
+      where: opts?.teamId
+        ? { scenarioId, teamId: opts.teamId }
+        : { scenarioId, teamId: { not: null } },
+      select: { dateKey: true, teamId: true, hours: true },
+    }),
     db.capacity.findMany({
-      where: { scenarioId },
+      where: { scenarioId, ...(opts?.teamId ? { teamId: opts.teamId } : {}) },
       select: {
         dateKey: true,
         teamId: true,
@@ -188,12 +191,12 @@ export async function getUtilisationHeatmap(months: number): Promise<TeamMonthUt
 export type DemandBridge = { committedHours: number; weightedHours: number; stretchHours: number };
 
 /** §7.1 Committed / Weighted / Stretch Demand, project-linked allocations only. */
-export async function getDemandBridge(): Promise<DemandBridge> {
-  const scenarioId = await defaultScenarioId();
+export async function getDemandBridge(opts?: { teamId?: number }): Promise<DemandBridge> {
+  const scenarioId = await getActiveScenarioId();
   if (!scenarioId) return { committedHours: 0, weightedHours: 0, stretchHours: 0 };
 
   const allocations = await db.forecastAllocation.findMany({
-    where: { scenarioId, projectId: { not: null } },
+    where: { scenarioId, projectId: { not: null }, ...(opts?.teamId ? { teamId: opts.teamId } : {}) },
     select: {
       hours: true,
       project: {
@@ -235,13 +238,14 @@ export type TeamHeadcount = {
 };
 
 /** Current-month headcount vs vacancy vs open recruitment pipeline, per team. */
-export async function getTeamHeadcount(): Promise<TeamHeadcount[]> {
-  const scenarioId = await defaultScenarioId();
+export async function getTeamHeadcount(opts?: { teamId?: number }): Promise<TeamHeadcount[]> {
+  const scenarioId = await getActiveScenarioId();
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const dateKey = buildCalendarDateRow(monthStart).dateKey;
 
   const teams = await db.team.findMany({
+    where: opts?.teamId ? { id: opts.teamId } : undefined,
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -267,12 +271,16 @@ export async function getTeamHeadcount(): Promise<TeamHeadcount[]> {
 export type ProjectDemand = { projectId: number; projectName: string; weightedHours: number; revenueForecast: number | null; ragStatus: string | null };
 
 /** Weighted demand and revenue per project, for the Project Overview chart. */
-export async function getProjectDemand(): Promise<ProjectDemand[]> {
-  const scenarioId = await defaultScenarioId();
+export async function getProjectDemand(opts?: { customerId?: number; projectStatusId?: number }): Promise<ProjectDemand[]> {
+  const scenarioId = await getActiveScenarioId();
   if (!scenarioId) return [];
 
   const projects = await db.project.findMany({
-    where: { NOT: { projectStatus: { name: "Cancelled" } } },
+    where: {
+      NOT: { projectStatus: { name: "Cancelled" } },
+      ...(opts?.customerId ? { customerId: opts.customerId } : {}),
+      ...(opts?.projectStatusId ? { projectStatusId: opts.projectStatusId } : {}),
+    },
     select: {
       id: true,
       name: true,
@@ -315,7 +323,7 @@ export type MonthlyAccuracy = {
  * against isn't an accuracy result, it's just unplanned work.
  */
 export async function getForecastAccuracy(months: number): Promise<MonthlyAccuracy[]> {
-  const scenarioId = await defaultScenarioId();
+  const scenarioId = await getActiveScenarioId();
   const monthKeys = recentMonthKeys(months);
 
   const [actuals, forecasts] = await Promise.all([

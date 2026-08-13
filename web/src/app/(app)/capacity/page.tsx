@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { createCapacityAction, deleteCapacityAction } from "@/app/actions/capacity";
+import { getActiveScenarioId } from "@/lib/scenario";
 import { Card, DataTable, PageHeader, Row, Cell } from "@/components/page";
 import { CapacityForm } from "@/components/capacity-form";
 import { DeleteButton } from "@/components/form";
@@ -28,9 +29,10 @@ function availableHours(c: {
 
 export default async function CapacityPage({ searchParams }: PageProps<"/capacity">) {
   const { error } = await searchParams;
-  const [teams, scenarios, capacities] = await Promise.all([
+  const [teams, scenarios, activeScenarioId, capacities] = await Promise.all([
     db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.scenario.findMany({ where: { isLocked: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getActiveScenarioId(),
     db.capacity.findMany({
       take: 50,
       orderBy: { dateKey: "desc" },
@@ -84,7 +86,7 @@ export default async function CapacityPage({ searchParams }: PageProps<"/capacit
           <p className="mb-4 text-xs text-slate-500">
             One row per team, scenario and month — saving again for the same combination updates it in place.
           </p>
-          <CapacityForm action={createCapacityAction} teams={teams} scenarios={scenarios} />
+          <CapacityForm action={createCapacityAction} teams={teams} scenarios={scenarios} defaultScenarioId={activeScenarioId ?? undefined} />
         </Card>
       </div>
     </div>

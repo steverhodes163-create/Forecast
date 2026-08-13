@@ -1,5 +1,7 @@
+import { db } from "@/lib/db";
 import { getProjectDemand } from "@/lib/measures";
 import { ProjectDemandChart } from "@/components/charts/ProjectDemandChart";
+import { DashboardFilterBar } from "@/components/dashboard-filter-bar";
 import { Card, DataTable, PageHeader, Row, Cell } from "@/components/page";
 
 function ragClasses(rag: string | null) {
@@ -15,8 +17,16 @@ function ragClasses(rag: string | null) {
   }
 }
 
-export default async function ProjectOverviewPage() {
-  const projects = await getProjectDemand();
+export default async function ProjectOverviewPage({ searchParams }: PageProps<"/project-overview">) {
+  const { customerId: customerIdParam, projectStatusId: statusIdParam } = await searchParams;
+  const customerId = customerIdParam ? Number(customerIdParam) : undefined;
+  const projectStatusId = statusIdParam ? Number(statusIdParam) : undefined;
+
+  const [customers, statuses, projects] = await Promise.all([
+    db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.projectStatus.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
+    getProjectDemand({ customerId, projectStatusId }),
+  ]);
 
   const totalRevenue = projects.reduce((sum, p) => sum + (p.revenueForecast ?? 0), 0);
   const totalWeightedHours = projects.reduce((sum, p) => sum + p.weightedHours, 0);
@@ -31,7 +41,24 @@ export default async function ProjectOverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Project Overview" description="§9 Project Overview — weighted demand (§7.1) and RAG status per project, Baseline scenario." />
+      <PageHeader title="Project Overview" description="§9 Project Overview — weighted demand (§7.1) and RAG status per project." />
+
+      <DashboardFilterBar
+        filters={[
+          {
+            name: "customerId",
+            label: "Customer",
+            value: customerId ? String(customerId) : "",
+            options: customers.map((c) => ({ value: String(c.id), label: c.name })),
+          },
+          {
+            name: "projectStatusId",
+            label: "Status",
+            value: projectStatusId ? String(projectStatusId) : "",
+            options: statuses.map((s) => ({ value: String(s.id), label: s.name })),
+          },
+        ]}
+      />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {kpis.map((k) => (
@@ -63,6 +90,13 @@ export default async function ProjectOverviewPage() {
             <Cell align="right">{p.revenueForecast ? `£${p.revenueForecast.toLocaleString()}` : "—"}</Cell>
           </Row>
         ))}
+        {projects.length === 0 ? (
+          <Row>
+            <Cell>
+              <span className="text-slate-400">No projects match this filter.</span>
+            </Cell>
+          </Row>
+        ) : null}
       </DataTable>
     </div>
   );

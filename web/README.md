@@ -1,6 +1,7 @@
 # YASA Resource Forecasting — Web App
 
-Phases 1–4 (Foundations, Master Data & Input, Dashboards, Actuals Import) of the platform described in
+Phases 1–4 (Foundations, Master Data & Input, Dashboards, Actuals Import) plus a global
+scenario switcher and dashboard filters, of the platform described in
 `../docs/Solution-Architecture.md` (see §0 Platform Decision Addendum for why this is a
 web app rather than an Excel workbook, and what does/doesn't change from the original
 architecture).
@@ -108,6 +109,23 @@ Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `np
 is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
 `.screenshots/` (gitignored) if you want a quick visual check without running the app
 yourself.
+
+**Global scenario switcher & dashboard filters:**
+- `src/lib/scenario.ts` / `src/app/actions/scenario.ts` / `src/components/scenario-switcher.tsx`
+  — a cookie-based active scenario (`yasa_scenario_id`), switchable from a dropdown in the
+  app header on every page, falling back to the "Baseline" scenario if unset/invalid. Entry
+  forms (Forecast, Capacity) default their own scenario field to the active scenario.
+  Locked scenarios are excluded from those entry forms but selectable in the switcher for
+  reporting. The switcher's own `<select>` is named `globalScenarioId` (not `scenarioId`)
+  specifically so it never collides with the identically-named field inside the
+  Forecast/Capacity entry forms rendered on the same page.
+- `src/components/dashboard-filter-bar.tsx` — a reusable GET-form filter bar (URL search
+  params, no client state) used by Business Overview (Team), Team Overview (Team), and
+  Project Overview (Customer, Status). `getUtilisationHeatmap`, `getDemandBridge`,
+  `getTeamHeadcount`, `getProjectDemand` in `src/lib/measures.ts` all accept optional filter
+  args.
+- `e2e-scenario.mjs`, `e2e-filters.mjs` — cover switching scenarios (including the locked-
+  scenario fallback on entry forms) and each dashboard's filters.
 
 ## Not yet built (later phases — see §0 of the architecture doc)
 

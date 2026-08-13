@@ -28,14 +28,30 @@ const HOURS_FIELDS = [
   { name: "managementOverheadHours", label: "Management overhead" },
 ] as const;
 
-export function CapacityForm({ action, teams, scenarios }: { action: Action; teams: Option[]; scenarios: Option[] }) {
+export function CapacityForm({
+  action,
+  teams,
+  scenarios,
+  defaultScenarioId,
+}: {
+  action: Action;
+  teams: Option[];
+  scenarios: Option[];
+  defaultScenarioId?: number;
+}) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(action, undefined);
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <SelectField name="teamId" label="Team" required options={teams.map((t) => ({ value: t.id, label: t.name }))} />
-        <SelectField name="scenarioId" label="Scenario" required options={scenarios.map((s) => ({ value: s.id, label: s.name }))} />
+        <SelectField
+          name="scenarioId"
+          label="Scenario"
+          required
+          defaultValue={defaultScenarioId}
+          options={scenarios.map((s) => ({ value: s.id, label: s.name }))}
+        />
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Month</span>
           <input

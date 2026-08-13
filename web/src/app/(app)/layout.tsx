@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { logoutAction } from "@/app/actions/auth";
+import { getActiveScenarioId, listAllScenarios } from "@/lib/scenario";
+import { ScenarioSwitcher } from "@/components/scenario-switcher";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
@@ -22,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session) redirect("/login");
 
   const nav = session.appRole === "ADMIN" ? [...NAV, { href: "/admin/users", label: "Admin" }] : NAV;
+  const [scenarios, activeScenarioId] = await Promise.all([listAllScenarios(), getActiveScenarioId()]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-slate-50">
@@ -44,7 +47,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ))}
             </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <ScenarioSwitcher scenarios={scenarios} activeId={activeScenarioId} />
             <div className="text-right">
               <p className="text-sm font-medium text-slate-900">{session.name}</p>
               <p className="text-xs text-slate-400">{session.appRole}</p>
