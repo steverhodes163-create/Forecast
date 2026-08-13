@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
-import { getDemandBridge, getMonthlyDemandVsCapacity, getUtilisationHeatmap } from "@/lib/measures";
+import { getDemandBridge, getForecastAccuracy, getMonthlyDemandVsCapacity, getUtilisationHeatmap, hasAnyActuals } from "@/lib/measures";
 import { ManhattanChart } from "@/components/charts/ManhattanChart";
 import { DemandWaterfall } from "@/components/charts/DemandWaterfall";
 import { UtilisationHeatmap } from "@/components/charts/UtilisationHeatmap";
+import { ForecastAccuracyChart } from "@/components/charts/ForecastAccuracyChart";
 import { Card } from "@/components/page";
 
 async function getOverview() {
@@ -37,12 +38,14 @@ function allocationTarget(a: Awaited<ReturnType<typeof getOverview>>["recentAllo
 }
 
 export default async function DashboardPage() {
-  const [overview, monthly, bridge, heatmap] = await Promise.all([
+  const [overview, monthly, bridge, heatmap, actualsExist] = await Promise.all([
     getOverview(),
     getMonthlyDemandVsCapacity({ months: 6 }),
     getDemandBridge(),
     getUtilisationHeatmap(6),
+    hasAnyActuals(),
   ]);
+  const accuracy = actualsExist ? await getForecastAccuracy(6) : null;
 
   const current = monthly[0];
   const currentUtilisationPct = current.availableHours > 0 ? Math.round((current.demandHours / current.availableHours) * 1000) / 10 : null;
@@ -95,6 +98,28 @@ export default async function DashboardPage() {
         <p className="mb-4 text-xs text-slate-400">§7.2 Utilisation % = Booked Hours ÷ Available Hours, per team per month.</p>
         <UtilisationHeatmap rows={heatmap} />
       </Card>
+
+      {accuracy ? (
+        <Card>
+          <h2 className="mb-1 text-sm font-semibold text-slate-900">Forecast accuracy</h2>
+          <p className="mb-4 text-xs text-slate-400">
+            §8 — actual hours (from imported timesheets) against forecast hours, last 6 months.
+          </p>
+          <ForecastAccuracyChart data={accuracy} />
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {accuracy
+              .filter((a) => a.accuracyPct !== null)
+              .slice(-3)
+              .map((a) => (
+                <div key={a.monthKey} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                  <p className="text-xs font-medium text-slate-500">{a.label}</p>
+                  <p className="text-sm font-semibold text-slate-900">{a.accuracyPct}% accurate</p>
+                  <p className="text-xs text-slate-400">{a.varianceHours >= 0 ? "+" : ""}{a.varianceHours} hrs variance</p>
+                </div>
+              ))}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3">

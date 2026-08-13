@@ -16,6 +16,7 @@ const PROTECTED_PREFIXES = [
   "/capacity",
   "/team-overview",
   "/project-overview",
+  "/imports",
 ];
 const AUTH_ROUTES = ["/login"];
 
@@ -61,6 +62,7 @@ export const config = {
     "/capacity/:path*",
     "/team-overview/:path*",
     "/project-overview/:path*",
+    "/imports/:path*",
     "/login",
   ],
 };

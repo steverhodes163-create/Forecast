@@ -1,6 +1,6 @@
 # YASA Resource Forecasting — Web App
 
-Phases 1–3 (Foundations, Master Data & Input, Dashboards) of the platform described in
+Phases 1–4 (Foundations, Master Data & Input, Dashboards, Actuals Import) of the platform described in
 `../docs/Solution-Architecture.md` (see §0 Platform Decision Addendum for why this is a
 web app rather than an Excel workbook, and what does/doesn't change from the original
 architecture).
@@ -71,6 +71,24 @@ recreates the local dev database; never run against a shared/production database
   `src/lib/calendar.ts`), not one per week, so monthly aggregates aren't accidentally
   inflated by summing several weeks' worth of the same figures.
 
+**Phase 4 (Actuals Import) — the §8 Landing → Staging → Conforming → Load pipeline:**
+- `Employee.employeeNumber` / `Project.projectCode` — natural keys added specifically so
+  imports can match "by number, not name" as §8 requires; the original schema had no such
+  field, so this was a genuine gap closed here, not a pre-planned column.
+- `ImportException` — unmatched rows are never dropped; they're persisted here with the
+  row number, raw data and a reason, and reviewable per batch. The `OUT_ImportExceptions`
+  queue from §4/§8.
+- `src/lib/imports.ts` — parses a CSV (`csv-parse`), conforms each row against
+  Employee/Project/ForecastSource by natural key, and loads matched rows into
+  `fact_ActualAllocation` tagged with a new `ImportBatch` (audit trail: who/when/how many).
+- **`/imports`** — upload a timesheet CSV (template downloadable from the page), see batch
+  history with row/exception counts.
+- **`/imports/[id]`** — a batch's loaded actuals and its exceptions, side by side.
+- `getForecastAccuracy()` in `src/lib/measures.ts` — §8's "Actual vs Forecast, Forecast
+  Accuracy, Variance," surfaced as a chart on the Business Overview dashboard once any
+  actuals exist (hidden otherwise, rather than showing an always-empty chart).
+- Role-gated: import requires `ADMIN`/`PMO`/`FINANCE`.
+
 **Testing** — `scripts/e2e-*.mjs`, Playwright scripts run against a live `npm run start`:
 - `e2e-smoke.mjs` — auth flow: unauth redirect → login → data pages → RBAC-gated admin
   page → logout → re-blocked.
@@ -82,6 +100,9 @@ recreates the local dev database; never run against a shared/production database
   Hours calculation before and after an update.
 - `e2e-dashboard.mjs` — confirms the Business Overview's charts and heat map actually
   render (checks for recharts SVG elements and heat map cells, not just page 200s).
+- `e2e-imports.mjs` — uploads a CSV with one valid row and two intentionally-bad rows,
+  confirms the valid row loads and both bad rows land in the exceptions queue with the
+  right reasons.
 
 Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `npm run dev`)
 is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
@@ -90,5 +111,5 @@ yourself.
 
 ## Not yet built (later phases — see §0 of the architecture doc)
 
-The §8 import pipeline and the §7.4 what-if UI. The data model, input screens, and
-calculation layer underneath both already exist.
+The §7.4 what-if UI (scenario adjustments — the data model for it, `ScenarioAdjustment`,
+already exists). Hardening and UAT (§16 Phase 9-10) haven't started.

@@ -27,6 +27,17 @@ export function upcomingMonthKeys(count: number): string[] {
   return keys;
 }
 
+/** The past N month buckets ending with the current month, oldest first. */
+export function recentMonthKeys(count: number): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
 async function defaultScenarioId(): Promise<number | null> {
   const scenario =
     (await db.scenario.findFirst({ where: { name: "Baseline" } })) ??
@@ -285,4 +296,57 @@ export async function getProjectDemand(): Promise<ProjectDemand[]> {
       ragStatus: p.ragStatus,
     };
   });
+}
+
+export type MonthlyAccuracy = {
+  monthKey: string;
+  label: string;
+  actualHours: number;
+  forecastHours: number;
+  varianceHours: number;
+  accuracyPct: number | null;
+};
+
+/**
+ * §8: "Automatically calculate Actual vs Forecast, Forecast Accuracy, Variance."
+ * Actual comes from fact_ActualAllocation (the import pipeline, §8); forecast
+ * from fact_ForecastAllocation on the default scenario. Only months where a
+ * forecast existed get an accuracy % — an actual with no forecast to compare
+ * against isn't an accuracy result, it's just unplanned work.
+ */
+export async function getForecastAccuracy(months: number): Promise<MonthlyAccuracy[]> {
+  const scenarioId = await defaultScenarioId();
+  const monthKeys = recentMonthKeys(months);
+
+  const [actuals, forecasts] = await Promise.all([
+    db.actualAllocation.findMany({ select: { dateKey: true, actualHours: true } }),
+    scenarioId
+      ? db.forecastAllocation.findMany({ where: { scenarioId }, select: { dateKey: true, hours: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const actualByMonth = new Map<string, number>();
+  for (const a of actuals) {
+    const k = monthKeyOf(a.dateKey);
+    actualByMonth.set(k, (actualByMonth.get(k) ?? 0) + Number(a.actualHours));
+  }
+  const forecastByMonth = new Map<string, number>();
+  for (const f of forecasts) {
+    const k = monthKeyOf(f.dateKey);
+    forecastByMonth.set(k, (forecastByMonth.get(k) ?? 0) + Number(f.hours));
+  }
+
+  return monthKeys.map((k) => {
+    const actualHours = Math.round((actualByMonth.get(k) ?? 0) * 10) / 10;
+    const forecastHours = Math.round((forecastByMonth.get(k) ?? 0) * 10) / 10;
+    const varianceHours = Math.round((actualHours - forecastHours) * 10) / 10;
+    const accuracyPct = forecastHours > 0 ? Math.round((100 - (Math.abs(varianceHours) / forecastHours) * 100) * 10) / 10 : null;
+    return { monthKey: k, label: monthLabel(k), actualHours, forecastHours, varianceHours, accuracyPct };
+  });
+}
+
+/** Whether any actuals have ever been imported — dashboards use this to decide whether to show the accuracy widget at all. */
+export async function hasAnyActuals(): Promise<boolean> {
+  const count = await db.actualAllocation.count();
+  return count > 0;
 }

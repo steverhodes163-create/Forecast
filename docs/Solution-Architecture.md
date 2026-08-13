@@ -3,7 +3,8 @@
 
 **Status:** Phase 0 (this document) approved as a platform-neutral data model. Platform
 selection revised per addendum below — **build has moved from Excel to a web application.**
-Phases 1-3 (foundations, master data & input UI, dashboards) are complete; see `web/README.md`.
+Phases 1-4 (foundations, master data & input UI, dashboards, actuals import) are complete;
+see `web/README.md`.
 **Author:** Claude (Solution Architect)
 **Date:** 2026-08-05 (v0.1) / 2026-08-05 (v0.2 addendum)
 
@@ -61,7 +62,7 @@ the build proceeds):
    Teams, Projects, and the 14 scalar lookup/config tables) and forecast/capacity input
    (all three §7 planning modes) replacing `MST_`/`INP_` sheets. ✅ *done — see `web/README.md`*
 3. **Dashboards** — the §9 dashboards as real charts against live queries. ✅ *done — Business/Team/Project Overview, see `web/README.md`*
-4. **Imports** — the §8 staging pipeline as file-upload + server-side conforming jobs.
+4. **Imports** — the §8 staging pipeline as file-upload + server-side conforming jobs. ✅ *done — see `web/README.md`*
 5. **What-if & scenarios** — §7.4 as an interactive UI over `ScenarioAdjustment` rows.
 6. **Hardening & UAT** — as §16 Phase 9–10.
 
