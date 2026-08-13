@@ -123,6 +123,7 @@ model Employee {
   employeeSkills        EmployeeSkill[]
   forecastAllocations   ForecastAllocation[]
   actualAllocations     ActualAllocation[]
+  taskAssignments       TaskAssignment[]
   projectsManaged       Project[]        @relation("ProjectManager")
   customerAccounts      Customer[]       @relation("CustomerAccountManager")
   programmesManaged     Programme[]      @relation("ProgrammeManager")
@@ -329,6 +330,7 @@ model Project {
   actualAllocations       ActualAllocation[]
   scenarioAdjustments     ScenarioAdjustment[]
   projectTeams            ProjectTeam[]
+  tasks                   Task[]
 
   @@index([projectStatusId])
   @@index([businessUnitId])
@@ -472,6 +474,8 @@ model ForecastAllocation {
   skill            Skill?         @relation(fields: [skillId], references: [id])
   contractorId     Int?
   contractor       Contractor?    @relation(fields: [contractorId], references: [id])
+  taskId           Int? // set when this row was generated from the Gantt (§ task-driven grid), null for direct entry
+  task             Task?          @relation(fields: [taskId], references: [id])
   resourceTypeId   Int
   resourceType     ResourceType   @relation(fields: [resourceTypeId], references: [id])
   forecastSourceId Int
@@ -489,11 +493,63 @@ model ForecastAllocation {
   @@index([employeeId])
   @@index([teamId])
   @@index([skillId])
+  @@index([taskId])
   // Identity of a calendarised forecast grid cell (§7 employee-mode entry
   // scoped to a project) -- lets the grid upsert a cell directly. NULLs are
   // distinct in Postgres unique indexes, so team-mode/skill-mode rows
   // (employeeId IS NULL) are unaffected.
   @@unique([scenarioId, employeeId, projectId, dateKey, resourceTypeId, forecastSourceId], name: "gridCell")
+}
+
+// ---------------------------------------------------------------------------
+// Tasks / Gantt (§7 task-driven forecasting) -- a project's task plan, with
+// Finish-to-Start dependencies and a computed critical path (CPM). A task's
+// computed schedule + assignments generate ForecastAllocation rows (tagged
+// via taskId above) that feed the forecast grid's third row level.
+// ---------------------------------------------------------------------------
+
+model Task {
+  id                Int              @id @default(autoincrement())
+  projectId         Int
+  project           Project          @relation(fields: [projectId], references: [id])
+  name              String
+  durationDays      Int // working days
+  manualStartDate   DateTime?        @db.Date // constraint: "no earlier than" -- dependencies can still push later
+  computedStartDate DateTime?        @db.Date // written by recomputeProjectSchedule (src/lib/task-service.ts)
+  computedEndDate   DateTime?        @db.Date
+  isCritical        Boolean          @default(false)
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  assignments       TaskAssignment[]
+  allocations       ForecastAllocation[]
+  predecessorOf     TaskDependency[] @relation("PredecessorTask")
+  successorOf       TaskDependency[] @relation("SuccessorTask")
+
+  @@index([projectId])
+}
+
+model TaskDependency {
+  id                Int  @id @default(autoincrement())
+  predecessorTaskId Int
+  predecessorTask   Task @relation("PredecessorTask", fields: [predecessorTaskId], references: [id])
+  successorTaskId   Int
+  successorTask     Task @relation("SuccessorTask", fields: [successorTaskId], references: [id])
+  lagDays           Int  @default(0) // Finish-to-Start only for v1
+
+  @@unique([predecessorTaskId, successorTaskId])
+}
+
+model TaskAssignment {
+  id         Int      @id @default(autoincrement())
+  taskId     Int
+  task       Task     @relation(fields: [taskId], references: [id])
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  fte        Decimal  @db.Decimal(4, 3) // share of effort, e.g. 1.000 = fully dedicated to this task
+
+  @@unique([taskId, employeeId])
 }
 
 model ActualAllocation {

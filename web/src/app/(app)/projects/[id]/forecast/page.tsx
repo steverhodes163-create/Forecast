@@ -49,7 +49,8 @@ export default async function ProjectForecastPage({ params }: PageProps<"/projec
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`${project.name} — Forecast grid`}
-        description={`§7 calendarised entry — team and month rows/columns are computed rollups of their members/weeks. Scenario: ${scenario.name}${scenario.isLocked ? " (locked — entry disabled)" : ""}.`}
+        description={`§7 calendarised entry — team and month rows/columns are computed rollups of their members/weeks. Task rows (§ task-driven forecasting) roll up automatically from the project's Gantt chart. Scenario: ${scenario.name}${scenario.isLocked ? " (locked — entry disabled)" : ""}.`}
+        action={{ href: `/projects/${project.id}/gantt`, label: "Open Gantt chart" }}
       />
       <Card>
         <ForecastGrid

@@ -1,8 +1,8 @@
 # YASA Resource Forecasting — Web App
 
 Phases 1–4 (Foundations, Master Data & Input, Dashboards, Actuals Import) plus a global
-scenario switcher, dashboard filters, and a calendarised per-project forecast grid, of the
-platform described in
+scenario switcher, dashboard filters, a calendarised per-project forecast grid, and a
+task-driven Gantt chart with critical path scheduling, of the platform described in
 `../docs/Solution-Architecture.md` (see §0 Platform Decision Addendum for why this is a
 web app rather than an Excel workbook, and what does/doesn't change from the original
 architecture).
@@ -111,11 +111,16 @@ recreates the local dev database; never run against a shared/production database
   members, confirms the team subtotal sums correctly, the FTE/Hours toggle changes the
   display, collapsing a month hides its week columns, and removing a team preserves its
   underlying hours (they reappear when the team is re-added).
+- `e2e-gantt.mjs` — builds a 3-task dependency chain, confirms all three are marked
+  critical, assigns an employee to a task and confirms the hours reach the forecast grid's
+  task row, confirms a cycle-creating dependency is rejected with a clear error, and cleans
+  up.
 
 Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `npm run dev`)
 is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
 `.screenshots/` (gitignored) if you want a quick visual check without running the app
-yourself.
+yourself. `scripts/check-scheduling.mjs` is a standalone (no server needed) sanity check of
+the CPM scheduling math — run with `node --experimental-strip-types scripts/check-scheduling.mjs`.
 
 **Global scenario switcher & dashboard filters:**
 - `src/lib/scenario.ts` / `src/app/actions/scenario.ts` / `src/components/scenario-switcher.tsx`
@@ -162,14 +167,48 @@ yourself.
   `standardWeeklyHours` (hours are always what's stored — FTE is display-only, computed on
   the fly); only the finest visible grain is ever editable — a collapsed month or a team row
   is a read-only sum, exactly like Excel's "roll up, don't duplicate" convention.
+- The grid has a third row level for task-driven hours (see below) — expand an employee with
+  a ▸ toggle to see the tasks generating their numbers. Weeks a task covers become read-only
+  (edit the task, not the cell); weeks with no task keep today's direct-entry behaviour.
 - Not built yet: a cross-project *per-team* rollup view (a team's total committed time across
   all its projects) — the natural companion read-only report once this entry grid is
-  established. Task/Gantt linkage (hours flowing up from a future timing-plan/task
-  breakdown) is explicitly deferred; nothing here precludes adding an optional `taskId` to
-  `ForecastAllocation` later.
+  established.
+
+**Task-driven Gantt chart with critical path (§ task-driven forecasting, per project):**
+- **`/projects/[id]/gantt`** (linked from the Projects list and cross-linked from the
+  forecast grid) — a project's task plan: name, duration (working days), Finish-to-Start
+  dependencies (with optional lag), and per-task employee assignments (FTE share). A real
+  Critical Path Method (CPM) engine computes each task's schedule and highlights the
+  critical path in red, same convention as MS Project.
+- `Task` / `TaskDependency` / `TaskAssignment` (`prisma/schema.prisma`) — the task graph,
+  plus a nullable `taskId` on `ForecastAllocation` tagging which rows were generated from a
+  task versus typed directly into the grid (this is exactly the extensibility hook flagged,
+  but deliberately not built, when the grid shipped).
+- `src/lib/scheduling.ts` — the CPM engine as pure functions (`computeSchedule`: forward/
+  backward pass giving early/late start-finish, slack, and `isCritical`; `weeklyHoursForTask`:
+  prorates a task's hours into whichever week they partially overlap). No DB access, verified
+  standalone via `scripts/check-scheduling.mjs` (a pure chain, a parallel branch with slack,
+  and the proration math).
+- `src/lib/task-service.ts` — `recomputeProjectSchedule(projectId)` re-runs the CPM engine and
+  regenerates every task's `taskId`-tagged `ForecastAllocation` rows against whichever
+  scenario is currently active, called after every task/dependency/assignment change. If an
+  assignee's team was never added to the project's forecast grid, it's added automatically —
+  tasks are meant to drive the grid, so the grid always shows what's driving it.
+- `src/components/gantt-chart.tsx` — bars positioned by computed dates, dependency arrows
+  (SVG elbow connectors), critical path in red, a "today" marker. **Read-only in this pass —
+  edit dates via the task form, not by dragging the chart.** Drag-to-resize is an explicit,
+  confirmed-with-the-user follow-up phase once this foundation (data model, CPM engine, and
+  correct rendering) is proven out, not a cut corner.
+- Cycle prevention: adding a dependency that would close a loop is rejected server-side
+  (BFS over the existing graph) with a clear error, before anything is written.
+- A task's schedule is scenario-independent (dates/durations/dependencies don't vary by
+  scenario), but the *hours it writes* go into whichever scenario is active when a task is
+  saved — a "Recalculate for current scenario" button on the Gantt page re-generates them
+  for the scenario you're currently viewing, without changing anything about the task itself.
 
 ## Not yet built (later phases — see §0 of the architecture doc)
 
 The §7.4 what-if UI (scenario adjustments — the data model for it, `ScenarioAdjustment`,
-already exists), and the cross-project per-team rollup view and Task/Gantt linkage noted
-above. Hardening and UAT (§16 Phase 9-10) haven't started.
+already exists), the cross-project per-team rollup view, and drag-to-resize on the Gantt
+chart (Phase B of task-driven forecasting) — all noted above. Hardening and UAT (§16
+Phase 9-10) haven't started.

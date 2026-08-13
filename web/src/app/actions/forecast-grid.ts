@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession, hasRole } from "@/lib/auth";
+import { gridDefaults } from "@/lib/forecast-grid";
 
 type ActionResult = { ok: true } | { error: string };
 
@@ -11,22 +12,6 @@ async function requireEditor() {
   if (!hasRole(session, ["ADMIN", "PMO", "ENGINEERING_LEAD"])) {
     throw new Error("You do not have permission to enter forecast allocations.");
   }
-}
-
-// The grid always writes employee-mode rows tagged as project-linked work,
-// so it never collides with (and never overwrites) a manually-entered row
-// for the same employee/week logged against a different ForecastSource
-// (e.g. "Annual Leave", "BAU") -- see the `gridCell` unique constraint on
-// ForecastAllocation, which is scoped by resourceTypeId + forecastSourceId.
-let cachedGridDefaults: { resourceTypeId: number; forecastSourceId: number } | null = null;
-async function gridDefaults() {
-  if (cachedGridDefaults) return cachedGridDefaults;
-  const [resourceType, forecastSource] = await Promise.all([
-    db.resourceType.findFirstOrThrow({ where: { name: "Employee" } }),
-    db.forecastSource.findFirstOrThrow({ where: { name: "Project" } }),
-  ]);
-  cachedGridDefaults = { resourceTypeId: resourceType.id, forecastSourceId: forecastSource.id };
-  return cachedGridDefaults;
 }
 
 export async function setForecastCellAction(input: {

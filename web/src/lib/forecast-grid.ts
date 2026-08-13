@@ -46,11 +46,19 @@ export async function ensureCalendarWeeksInRange(startMonth: Date, monthCount: n
   return months;
 }
 
+export type GridTask = {
+  taskId: number;
+  name: string;
+  isCritical: boolean;
+  hoursByDateKey: Record<number, number>;
+};
+
 export type GridEmployee = {
   employeeId: number;
   name: string;
   standardWeeklyHours: number;
-  hoursByDateKey: Record<number, number>;
+  hoursByDateKey: Record<number, number>; // direct-entry rows only (taskId IS NULL)
+  tasks: GridTask[];
 };
 
 export type GridTeam = {
@@ -63,6 +71,24 @@ export type ProjectForecastGrid = {
   months: GridMonthColumn[];
   teams: GridTeam[];
 };
+
+// The grid always writes employee-mode rows tagged as project-linked work,
+// so it never collides with (and never overwrites) a manually-entered row
+// for the same employee/week logged against a different ForecastSource
+// (e.g. "Annual Leave", "BAU") -- see the `gridCell` unique constraint on
+// ForecastAllocation, which is scoped by resourceTypeId + forecastSourceId.
+// Shared by direct-entry cell writes (actions/forecast-grid.ts) and
+// task-generated writes (task-service.ts) so both paths use the same tag.
+let cachedGridDefaults: { resourceTypeId: number; forecastSourceId: number } | null = null;
+export async function gridDefaults() {
+  if (cachedGridDefaults) return cachedGridDefaults;
+  const [resourceType, forecastSource] = await Promise.all([
+    db.resourceType.findFirstOrThrow({ where: { name: "Employee" } }),
+    db.forecastSource.findFirstOrThrow({ where: { name: "Project" } }),
+  ]);
+  cachedGridDefaults = { resourceTypeId: resourceType.id, forecastSourceId: forecastSource.id };
+  return cachedGridDefaults;
+}
 
 export async function getProjectForecastGrid(
   projectId: number,
@@ -88,16 +114,30 @@ export async function getProjectForecastGrid(
     }),
     db.forecastAllocation.findMany({
       where: { projectId, scenarioId, employeeId: { not: null }, dateKey: { in: dateKeys } },
-      select: { employeeId: true, dateKey: true, hours: true },
+      select: { employeeId: true, dateKey: true, hours: true, taskId: true, task: { select: { name: true, isCritical: true } } },
     }),
   ]);
 
-  const hoursByEmployee = new Map<number, Record<number, number>>();
+  const directHoursByEmployee = new Map<number, Record<number, number>>();
+  const tasksByEmployee = new Map<number, Map<number, GridTask>>();
   for (const a of allocations) {
     if (a.employeeId === null) continue;
-    const bucket = hoursByEmployee.get(a.employeeId) ?? {};
-    bucket[a.dateKey] = Number(a.hours);
-    hoursByEmployee.set(a.employeeId, bucket);
+    if (a.taskId === null || !a.task) {
+      const bucket = directHoursByEmployee.get(a.employeeId) ?? {};
+      bucket[a.dateKey] = Number(a.hours);
+      directHoursByEmployee.set(a.employeeId, bucket);
+      continue;
+    }
+    const employeeTasks = tasksByEmployee.get(a.employeeId) ?? new Map<number, GridTask>();
+    const task = employeeTasks.get(a.taskId) ?? {
+      taskId: a.taskId,
+      name: a.task.name,
+      isCritical: a.task.isCritical,
+      hoursByDateKey: {},
+    };
+    task.hoursByDateKey[a.dateKey] = Number(a.hours);
+    employeeTasks.set(a.taskId, task);
+    tasksByEmployee.set(a.employeeId, employeeTasks);
   }
 
   const teams: GridTeam[] = projectTeams.map((pt) => ({
@@ -107,7 +147,8 @@ export async function getProjectForecastGrid(
       employeeId: e.id,
       name: e.name,
       standardWeeklyHours: Number(e.standardWeeklyHours),
-      hoursByDateKey: hoursByEmployee.get(e.id) ?? {},
+      hoursByDateKey: directHoursByEmployee.get(e.id) ?? {},
+      tasks: Array.from((tasksByEmployee.get(e.id) ?? new Map()).values()),
     })),
   }));
 
