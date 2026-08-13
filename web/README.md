@@ -28,8 +28,7 @@ npx prisma db seed     # loads fictional demo data (org, projects, forecast rows
 npm run dev
 ```
 
-Demo login: `admin@yasa.local` / `ChangeMe123!` (seeded — change/remove before any
-non-local use).
+Demo login: `steve@yasa.local` / `steve` (seeded — change/remove before any non-local use).
 
 To reseed from a clean slate, use `npx prisma migrate reset` (destructive — drops and
 recreates the local dev database; never run against a shared/production database).

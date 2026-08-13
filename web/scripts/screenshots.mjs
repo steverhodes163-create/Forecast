@@ -13,8 +13,8 @@ async function main() {
   await page.goto(BASE + "/login");
   await page.screenshot({ path: `${OUT}/01-login.png` });
 
-  await page.fill('input[name="email"]', "admin@yasa.local");
-  await page.fill('input[name="password"]', "ChangeMe123!");
+  await page.fill('input[name="email"]', "steve@yasa.local");
+  await page.fill('input[name="password"]', "steve");
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/dashboard/);
 

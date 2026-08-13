@@ -565,12 +565,12 @@ async function main() {
   });
 
   console.log("Seeding admin user...");
-  const passwordHash = await bcrypt.hash("ChangeMe123!", 12);
+  const passwordHash = await bcrypt.hash("steve", 12);
   await db.user.upsert({
-    where: { email: "admin@yasa.local" },
+    where: { email: "steve@yasa.local" },
     update: {},
     create: {
-      email: "admin@yasa.local",
+      email: "steve@yasa.local",
       name: "System Administrator",
       passwordHash,
       appRole: "ADMIN",

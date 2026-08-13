@@ -17,8 +17,8 @@ async function main() {
   console.log("   -> redirected to", page.url());
 
   console.log("2. Logging in...");
-  await page.fill('input[name="email"]', "admin@yasa.local");
-  await page.fill('input[name="password"]', "ChangeMe123!");
+  await page.fill('input[name="email"]', "steve@yasa.local");
+  await page.fill('input[name="password"]', "steve");
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/dashboard/);
   console.log("   -> redirected to", page.url());

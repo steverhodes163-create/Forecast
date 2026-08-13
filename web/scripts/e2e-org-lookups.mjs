@@ -13,8 +13,8 @@ async function main() {
 
   console.log("1. Login...");
   await page.goto(BASE + "/login");
-  await page.fill('input[name="email"]', "admin@yasa.local");
-  await page.fill('input[name="password"]', "ChangeMe123!");
+  await page.fill('input[name="email"]', "steve@yasa.local");
+  await page.fill('input[name="password"]', "steve");
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/dashboard/);
 

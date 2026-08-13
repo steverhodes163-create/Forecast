@@ -15,7 +15,7 @@ export default async function LoginPage() {
         <h1 className="mt-1 text-xl font-semibold text-slate-900">Sign in</h1>
         <LoginForm />
         <p className="mt-6 text-xs text-slate-400">
-          Demo credentials: admin@yasa.local / ChangeMe123!
+          Demo credentials: steve@yasa.local / steve
         </p>
       </div>
     </div>
