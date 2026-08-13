@@ -17,6 +17,7 @@ export type GanttTask = {
   manualStartDate: Date | null;
   completedAt: Date | null;
   notes: string | null;
+  ownerTeamId: number | null;
   dependsOn: { taskId: number; lagDays: number }[];
   assignees: { employeeId: number; name: string; fte: number }[];
 };
@@ -32,7 +33,7 @@ export async function getProjectGantt(projectId: number): Promise<ProjectGantt> 
     db.task.findMany({
       where: { projectId },
       orderBy: { id: "asc" },
-      select: { id: true, name: true, durationDays: true, manualStartDate: true, completedAt: true, notes: true },
+      select: { id: true, name: true, durationDays: true, manualStartDate: true, completedAt: true, notes: true, ownerTeamId: true },
     }),
     db.taskDependency.findMany({
       where: { predecessorTask: { projectId } },
@@ -81,6 +82,7 @@ export async function getProjectGantt(projectId: number): Promise<ProjectGantt> 
       manualStartDate: t.manualStartDate,
       completedAt: t.completedAt,
       notes: t.notes,
+      ownerTeamId: t.ownerTeamId,
       dependsOn: dependsOnByTask.get(t.id) ?? [],
       assignees: assignmentsByTask.get(t.id) ?? [],
     };

@@ -80,12 +80,19 @@ async function main() {
       return null;
     }
 
+    // No owner team is picked here, so the Assigned to picker falls back to
+    // showing every employee -- simplest way to assign this specific person
+    // without needing to know which team they belong to.
     const row = await dataRowByName("My Tasks Marker");
-    const resInput = row.locator('input[placeholder="e.g. Alex Whitfield[50%]"]');
-    await resInput.fill(employee.name);
-    await resInput.blur();
+    await row.locator('button:has-text("+ Add person")').click();
+    await page.waitForTimeout(500);
+    const rowWithPicker = await dataRowByName("My Tasks Marker");
+    const personSelect = rowWithPicker.locator("select").nth(1);
+    const options = await personSelect.locator("option").allTextContents();
+    const optionIndex = options.findIndex((t) => t.trim() === employee.name);
+    if (optionIndex < 1) throw new Error(`Expected "${employee.name}" in the Assigned to picker, got: ${options.join(", ")}`);
+    await personSelect.selectOption({ index: optionIndex });
     await page.waitForTimeout(1000);
-    if (await resInput.getAttribute("title")) throw new Error(`Unexpected resource error: ${await resInput.getAttribute("title")}`);
 
     console.log("3. Visit /my-tasks, confirm the task is listed...");
     await page.goto(BASE + "/my-tasks");
@@ -109,7 +116,7 @@ async function main() {
     if (!doneChecked) throw new Error("Completing from /my-tasks did not reflect on the Gantt sheet");
 
     console.log("6. Clean up: delete the marker task...");
-    await rowAfter.locator('button:has-text("✕")').click();
+    await rowAfter.locator("td").last().locator('button:has-text("✕")').click();
     await page.waitForTimeout(800);
     const remaining = await dataRowByName("My Tasks Marker");
     if (remaining) throw new Error("Marker task was not cleaned up");

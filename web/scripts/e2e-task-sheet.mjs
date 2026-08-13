@@ -73,7 +73,7 @@ async function main() {
   await predInput.blur();
   await page.waitForTimeout(1000);
   if (await predInput.getAttribute("title")) throw new Error(`Unexpected predecessor error: ${await predInput.getAttribute("title")}`);
-  const bStart = await rowB.locator("td").nth(5).innerText();
+  const bStart = await rowB.locator("td").nth(6).innerText();
   console.log("   -> Task B start:", bStart);
   if (!bStart.includes("12 Jan") && !bStart.includes("Jan")) {
     // Not asserting an exact date here (depends on this project's anchor date) --
@@ -91,36 +91,64 @@ async function main() {
   await predInput.blur();
   await page.waitForTimeout(800);
 
-  console.log("6. Resources shorthand: unknown name rejected, valid name+FTE accepted...");
-  const resInput = rowB.locator('input[placeholder="e.g. Alex Whitfield[50%]"]');
-  await resInput.fill("Nobody Real");
-  await resInput.blur();
-  await page.waitForTimeout(800);
-  const unknownError = await resInput.getAttribute("title");
-  console.log("   -> unknown-name error:", unknownError);
-  if (!unknownError) throw new Error("Expected an error for an unknown resource name");
-
-  await resInput.fill("Alex Whitfield[50%]");
-  await resInput.blur();
+  console.log("6. Owner team + Assigned to: pick a team, add two people scoped to it, set their %...");
+  const teamSelect = rowB.locator("select").first();
+  await teamSelect.selectOption({ index: 1 });
+  const teamLabel = await teamSelect.locator("option").nth(1).textContent();
   await page.waitForTimeout(1000);
-  const validError = await resInput.getAttribute("title");
-  if (validError) throw new Error(`Unexpected resource error for a valid name: ${validError}`);
-  console.log("   -> valid resource+FTE accepted");
+  console.log("   -> owner team:", teamLabel);
+
+  await (await dataRowByName("Sheet Task B")).locator('button:has-text("+ Add person")').click();
+  await page.waitForTimeout(500);
+  let rowB2 = await dataRowByName("Sheet Task B");
+  const personSelect1 = rowB2.locator("select").nth(1);
+  const personCount1 = await personSelect1.locator("option").count();
+  if (personCount1 < 2) throw new Error(`Expected at least one team member available, got ${personCount1 - 1}`);
+  await personSelect1.selectOption({ index: 1 });
+  const person1 = await personSelect1.locator("option").nth(1).textContent();
+  await page.waitForTimeout(1000);
+
+  rowB2 = await dataRowByName("Sheet Task B");
+  const pctInput1 = rowB2.locator('input[type="number"]').first();
+  await pctInput1.fill("60");
+  await pctInput1.blur();
+  await page.waitForTimeout(1000);
+  console.log("   -> first person:", person1, "at 60%");
+
+  rowB2 = await dataRowByName("Sheet Task B");
+  await rowB2.locator('button:has-text("+ Add person")').click();
+  await page.waitForTimeout(500);
+  rowB2 = await dataRowByName("Sheet Task B");
+  const personSelect2 = rowB2.locator("select").nth(2);
+  const personCount2 = await personSelect2.locator("option").count();
+  console.log("   -> second picker excludes the first person, options left:", personCount2 - 1);
+  if (personCount2 < 2) throw new Error("Expected at least one other team member available for the second person");
+  await personSelect2.selectOption({ index: 1 });
+  const person2 = await personSelect2.locator("option").nth(1).textContent();
+  await page.waitForTimeout(1000);
+  if (person2 === person1) throw new Error("Second picker allowed selecting the same person twice");
+
+  rowB2 = await dataRowByName("Sheet Task B");
+  const pctInput2 = rowB2.locator('input[type="number"]').nth(1);
+  await pctInput2.fill("40");
+  await pctInput2.blur();
+  await page.waitForTimeout(1000);
+  console.log("   -> second person:", person2, "at 40%");
 
   console.log("7. Mark Task A done, confirm Task B's start reschedules...");
-  const aFinishBefore = await rowA.locator("td").nth(6).innerText();
+  const aFinishBefore = await rowA.locator("td").nth(7).innerText();
   await rowA.locator('input[type="checkbox"]').check();
   await page.waitForTimeout(1200);
   const rowBAfter = await dataRowByName("Sheet Task B");
-  const bStartAfter = await rowBAfter.locator("td").nth(5).innerText();
+  const bStartAfter = await rowBAfter.locator("td").nth(6).innerText();
   console.log("   -> A's planned finish was:", aFinishBefore, " | B's start is now:", bStartAfter);
 
   console.log("8. Clean up: delete both marker tasks...");
   const rowBFinal = await dataRowByName("Sheet Task B");
-  await rowBFinal.locator('button:has-text("✕")').click();
+  await rowBFinal.locator("td").last().locator('button:has-text("✕")').click();
   await page.waitForTimeout(800);
   const rowAFinal = await dataRowByName("Sheet Task A");
-  await rowAFinal.locator('button:has-text("✕")').click();
+  await rowAFinal.locator("td").last().locator('button:has-text("✕")').click();
   await page.waitForTimeout(800);
   const remaining = await dataRowByName("Sheet Task A");
   console.log("   -> Task A row remaining:", !!remaining);

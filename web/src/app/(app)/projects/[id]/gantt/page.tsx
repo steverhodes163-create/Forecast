@@ -13,7 +13,11 @@ export default async function ProjectGanttPage({ params }: PageProps<"/projects/
   const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true } });
   if (!project) notFound();
 
-  const gantt = await getProjectGantt(projectId);
+  const [gantt, teams, employees] = await Promise.all([
+    getProjectGantt(projectId),
+    db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.employee.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, teamId: true } }),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -38,10 +42,11 @@ export default async function ProjectGanttPage({ params }: PageProps<"/projects/
       <Card>
         <h2 className="mb-1 text-sm font-semibold text-slate-900">Task sheet</h2>
         <p className="mb-3 text-xs text-slate-400">
-          Predecessors: task number, optionally with lag — e.g. <code>1,3+2d</code>. Resources: name, optionally with
-          an FTE share — e.g. <code>Alex Whitfield[50%]</code>.
+          Predecessors: task number, optionally with lag — e.g. <code>1,3+2d</code>. Pick an owner team to narrow the
+          Assigned to picker to that team&apos;s members; add up to as many people as needed and set each one&apos;s
+          share of the work.
         </p>
-        <TaskSheet projectId={project.id} tasks={gantt.tasks} />
+        <TaskSheet projectId={project.id} tasks={gantt.tasks} teams={teams} employees={employees} />
       </Card>
     </div>
   );

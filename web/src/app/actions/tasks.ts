@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession, hasRole } from "@/lib/auth";
 import { recomputeProjectSchedule, setTaskCompletion } from "@/lib/task-service";
-import { parsePredecessors, parseResources } from "@/lib/task-shorthand";
+import { parsePredecessors } from "@/lib/task-shorthand";
 
 type ActionResult = { ok: true } | { error: string };
 
@@ -131,35 +131,45 @@ export async function setTaskPredecessorsAction(input: { taskId: number; project
   return { ok: true };
 }
 
-export async function setTaskResourcesAction(input: { taskId: number; projectId: number; raw: string }): Promise<ActionResult> {
-  const { taskId, projectId, raw } = input;
+export async function setTaskOwnerTeamAction(input: { taskId: number; projectId: number; teamId: number | null }): Promise<ActionResult> {
+  const { taskId, projectId, teamId } = input;
   try {
     await requireEditor();
-    const parsed = parseResources(raw);
-    if ("error" in parsed) throw new Error(parsed.error);
+    await db.task.update({ where: { id: taskId }, data: { ownerTeamId: teamId } });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not update owner team." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
+}
 
-    const employees = await db.employee.findMany({ select: { id: true, name: true } });
-    const byNameLower = new Map(employees.map((e) => [e.name.toLowerCase(), e.id]));
-    const resolved: { employeeId: number; fte: number }[] = [];
-    const unmatched: string[] = [];
-    for (const token of parsed.tokens) {
-      const employeeId = byNameLower.get(token.name.toLowerCase());
-      if (employeeId === undefined) unmatched.push(token.name);
-      else resolved.push({ employeeId, fte: token.pct / 100 });
+export async function setTaskAssignmentsAction(input: {
+  taskId: number;
+  projectId: number;
+  assignments: { employeeId: number; pct: number }[];
+}): Promise<ActionResult> {
+  const { taskId, projectId, assignments } = input;
+  try {
+    await requireEditor();
+    const employeeIds = assignments.map((a) => a.employeeId);
+    if (new Set(employeeIds).size !== employeeIds.length) {
+      throw new Error("The same person is assigned twice.");
     }
-    if (unmatched.length > 0) {
-      throw new Error(`Unknown employee${unmatched.length > 1 ? "s" : ""}: ${unmatched.join(", ")}`);
+    for (const a of assignments) {
+      if (!Number.isFinite(a.pct) || a.pct <= 0 || a.pct > 100) {
+        throw new Error("Each person's share must be between 1% and 100%.");
+      }
     }
 
     await db.taskAssignment.deleteMany({ where: { taskId } });
-    if (resolved.length > 0) {
+    if (assignments.length > 0) {
       await db.taskAssignment.createMany({
-        data: resolved.map((r) => ({ taskId, employeeId: r.employeeId, fte: r.fte.toFixed(3) })),
+        data: assignments.map((a) => ({ taskId, employeeId: a.employeeId, fte: (a.pct / 100).toFixed(3) })),
       });
     }
     await recomputeProjectSchedule(projectId);
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Could not update resources." };
+    return { error: e instanceof Error ? e.message : "Could not update assignments." };
   }
   revalidateProject(projectId);
   return { ok: true };

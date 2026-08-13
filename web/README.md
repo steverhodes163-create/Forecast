@@ -124,13 +124,15 @@ much clearer signal than random pages 500ing in production.
 - `e2e-gantt.mjs` — builds a 3-task dependency chain via the task sheet, confirms all three
   render as critical, confirms the chart draws dependency connectors, confirms a
   cycle-creating dependency is rejected with a clear error, and cleans up.
-- `e2e-task-sheet.mjs` — exercises the MSP-shorthand cells directly: Predecessors and
-  Resources parsing (including a task's start correctly shifting to right after its
-  predecessor's finish), a bad task number and an unknown employee name each surfacing a
-  clear inline error, and marking a task done rescheduling its successor.
+- `e2e-task-sheet.mjs` — exercises the MSP-shorthand Predecessors cell directly (including a
+  task's start correctly shifting to right after its predecessor's finish, and a bad task
+  number surfacing a clear inline error), the Owner team + Assigned to dropdowns (picking a
+  team, adding two people scoped to it with independent percentages, confirming the second
+  picker excludes whoever the first one already picked), and marking a task done
+  rescheduling its successor.
 - `e2e-my-tasks.mjs` — links the demo login to an employee (restored afterward either way),
-  assigns them a task, confirms it's listed on `/my-tasks`, marks it complete from there, and
-  confirms the Gantt sheet reflects the same completion.
+  assigns them a task via the Assigned to picker, confirms it's listed on `/my-tasks`, marks
+  it complete from there, and confirms the Gantt sheet reflects the same completion.
 
 Run any of them with `node scripts/e2e-<name>.mjs` while `npm run start` (or `npm run dev`)
 is serving on port 3100. `scripts/screenshots.mjs` captures every main screen to
@@ -229,11 +231,20 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   the bottom adds a new task by typing its name.
 - **Predecessors** column: MSP-style shorthand — a comma-separated list of task numbers,
   optionally with a lag, e.g. `1,3+2d` (depends on tasks #1 and #3, the latter with a 2-day
-  lag). **Resources** column: comma-separated names, optionally with an FTE share, e.g.
-  `Alex Whitfield[50%]` (defaults to 100%). Both are parsed by
-  `src/lib/task-shorthand.ts` (pure, no DB access) and validated server-side — an unknown
-  task number, an unknown employee name, or a cycle-creating dependency all surface as a
-  clear inline error on the cell rather than silently failing.
+  lag), parsed by `src/lib/task-shorthand.ts` (pure, no DB access) and validated
+  server-side — an unknown task number or a cycle-creating dependency surfaces as a clear
+  inline error on the cell rather than silently failing.
+- **Owner team** and **Assigned to** columns replace what was originally a typed Resources
+  shorthand cell with actual dropdowns: `Task.ownerTeamId` (`prisma/schema.prisma`) picks a
+  team, which narrows the Assigned to picker to that team's members only (no team chosen
+  falls back to every employee). Assigned to supports multiple people per task — a "+ Add
+  person" row adds another `<select>`, each already-picked person is excluded from the
+  other rows' options so the same person can't be double-assigned, and each person gets
+  their own independently-editable share of the work (1-100%, not required to sum to 100 —
+  e.g. two people each doing their own 60%/40% slice of a task's total duration).
+  `setTaskOwnerTeamAction`/`setTaskAssignmentsAction` (`src/app/actions/tasks.ts`) replace
+  the assignment rows (`TaskAssignment.fte` stores each share) and recompute the schedule,
+  same as every other sheet edit.
 - This replaced the earlier form-based "Add task" card and its separate
   `/gantt/tasks/[id]/edit` page entirely, per explicit confirmation this app's Gantt should
   behave like MSP's own UI — not interoperate with real Microsoft Project files or Project

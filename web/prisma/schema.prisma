@@ -78,6 +78,7 @@ model Team {
   recruitments       Recruitment[]
   scenarioAdjustments ScenarioAdjustment[]
   projectTeams       ProjectTeam[]
+  ownedTasks         Task[]
 
   @@unique([departmentId, name])
 }
@@ -513,6 +514,8 @@ model Task {
   projectId         Int
   project           Project          @relation(fields: [projectId], references: [id])
   name              String
+  ownerTeamId       Int? // scopes which team's members show in the assignee picker
+  ownerTeam         Team?            @relation(fields: [ownerTeamId], references: [id])
   durationDays      Int // working days
   manualStartDate   DateTime?        @db.Date // constraint: "no earlier than" -- dependencies can still push later
   computedStartDate DateTime?        @db.Date // written by recomputeProjectSchedule (src/lib/task-service.ts)
