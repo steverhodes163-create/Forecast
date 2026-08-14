@@ -192,9 +192,8 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
 - The grid has a third row level for task-driven hours (see below) — expand an employee with
   a ▸ toggle to see the tasks generating their numbers. Weeks a task covers become read-only
   (edit the task, not the cell); weeks with no task keep today's direct-entry behaviour.
-- Not built yet: a cross-project *per-team* rollup view (a team's total committed time across
-  all its projects) — the natural companion read-only report once this entry grid is
-  established.
+- The cross-project per-team rollup view (a team's total committed time across all its
+  projects) is the natural companion read-only report to this entry grid — see below.
 
 **Task-driven Gantt chart with critical path (§ task-driven forecasting, per project):**
 - **`/projects/[id]/gantt`** (linked from the Projects list and cross-linked from the
@@ -331,9 +330,53 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   real dashboards, and cleans up directly via SQL afterward since there's no delete-scenario
   UI action (branch scenarios are meant to accumulate, not be torn down from the app itself).
 
+**Cross-project team rollup:**
+- **`/teams/[id]/rollup`** (linked from the Teams list and, when a team is selected, from
+  Team Overview) — the natural companion to the per-project forecast grid: one team's
+  committed hours summed across *every* project it's linked to, calendarised the same way
+  (month/week columns, collapse-to-month). Read-only — hours are entered from each
+  project's own forecast grid, never here.
+- `src/lib/team-rollup.ts` — `getTeamRollup(teamId, scenarioId, months)` mirrors
+  `getProjectForecastGrid` (`src/lib/forecast-grid.ts`) inverted: rows are projects instead
+  of employees, sourced from `ProjectTeam` the other direction (`where: { teamId }`), hours
+  summed via a join through `employee: { teamId }` — the fix for a gap two separate research
+  passes this session found in `getUtilisationHeatmap`/`getMonthlyDemandVsCapacity`
+  (`src/lib/measures.ts`): those two only sum `ForecastAllocation` rows with `teamId`
+  directly set, but all project-linked and task-driven rows set `employeeId`/`projectId`
+  instead, never `teamId`, so they silently exclude all project-linked demand. This new
+  function does not inherit that gap. Reuses `ensureCalendarWeeksInRange` from
+  `forecast-grid.ts` as-is for the column structure.
+- Resolves the scenario id via `resolveScenarioSourceId` (§7.4) before querying, and runs
+  fetched rows through `applyProjectAdjustments` (`src/lib/whatif.ts`) — **Cancel and Delay
+  apply here, Win does not**. This is the first calendarized view in the app where Delay's
+  date-shift is visually verifiable rather than a documented no-op on a scalar total (see
+  the What-If section above). Win is skipped because this view has no probability dimension
+  at all — it shows raw committed hours per project/week, the same as the project grid
+  shows raw hours per employee/week, so there's nothing for a probability override to
+  multiply.
+- `src/components/team-rollup.tsx` — a new, self-contained read-only component, not an
+  extension of `forecast-grid.tsx`. The two views' headers only overlap in ~25 lines of
+  month-collapse markup; not worth a shared abstraction for one other caller, and
+  `forecast-grid.tsx` is the one component here with real e2e coverage of its own
+  edit/task-expand/team-add-remove behaviour that a shared component would sit upstream of.
+  Hours only, no FTE/Hours toggle — FTE only makes sense where a per-row
+  `standardWeeklyHours` denominator exists (true per-employee in the project grid); rows
+  here are *projects*, which have none.
+- `scripts/e2e-team-rollup.mjs` — picks two projects dynamically (not hardcoded names, so
+  it survives reseeds), links the same team to both, confirms hours sum correctly across
+  projects, confirms removing/re-adding a project's `ProjectTeam` link drops/restores its
+  row without losing the underlying hours, then branches a what-if scenario and confirms
+  Delay visibly shifts a project's row by the right number of weeks and Cancel zeroes it
+  while an unrelated project stays untouched. Also self-cleans any pre-existing
+  `ProjectTeam` links on the two projects it picks before starting, since earlier scripts
+  in the same suite run (`e2e-gantt.mjs`, `e2e-task-sheet.mjs`, `e2e-my-tasks.mjs`) assign
+  employees to tasks as part of their own tests, which auto-adds `ProjectTeam` rows as a
+  legitimate side effect they don't themselves clean up — this test is self-sufficient
+  against that regardless of run order.
+
 ## Not yet built (later phases — see §0 of the architecture doc)
 
-The cross-project per-team rollup view and drag-to-resize on the Gantt chart (Phase B of
-task-driven forecasting) — both noted above. Hardening (§16 Phase 9) hasn't started;
-formal UAT (Phase 10) needs real stakeholder sign-off from Leadership/PMO/Finance/HR, which
-isn't something this build process can do on its own.
+Drag-to-resize on the Gantt chart (Phase B of task-driven forecasting, noted above).
+Hardening (§16 Phase 9) hasn't started; formal UAT (Phase 10) needs real stakeholder
+sign-off from Leadership/PMO/Finance/HR, which isn't something this build process can do on
+its own.

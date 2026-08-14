@@ -20,6 +20,7 @@ export default async function TeamOverviewPage({ searchParams }: PageProps<"/tea
       <PageHeader
         title="Team Overview"
         description="§9 Team Overview — utilisation trend and headcount vs vacancy vs recruitment pipeline."
+        action={teamId ? { href: `/teams/${teamId}/rollup`, label: "Open rollup" } : undefined}
       />
 
       <DashboardFilterBar

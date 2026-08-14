@@ -35,6 +35,9 @@ export default async function TeamsPage({ searchParams }: PageProps<"/teams">) {
               <Cell align="right">{t.budgetedHeadcount?.toString() ?? "—"}</Cell>
               <Cell align="right">
                 <div className="flex justify-end gap-2">
+                  <Link href={`/teams/${t.id}/rollup`} className="text-xs font-medium text-slate-500 hover:text-slate-900">
+                    Rollup
+                  </Link>
                   <Link href={`/teams/${t.id}/edit`} className="text-xs font-medium text-slate-500 hover:text-slate-900">
                     Edit
                   </Link>
