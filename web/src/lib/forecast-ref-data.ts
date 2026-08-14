@@ -2,7 +2,10 @@ import { db } from "@/lib/db";
 
 export async function getForecastFormRefData() {
   const [scenarios, projects, teams, employees, skills, resourceTypes, forecastSources, weeks] = await Promise.all([
-    db.scenario.findMany({ where: { isLocked: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    // Branch scenarios (baseScenarioId set) are "base + adjustments only" --
+    // excluded here so hand-entered rows never collide with adjustment
+    // resolution (§7.4, see src/lib/whatif.ts).
+    db.scenario.findMany({ where: { isLocked: false, baseScenarioId: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.project.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.employee.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),

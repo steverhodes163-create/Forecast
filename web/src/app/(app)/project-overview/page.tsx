@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { getProjectDemand } from "@/lib/measures";
+import { getActiveScenarioId } from "@/lib/scenario";
 import { ProjectDemandChart } from "@/components/charts/ProjectDemandChart";
 import { DashboardFilterBar } from "@/components/dashboard-filter-bar";
 import { Card, DataTable, PageHeader, Row, Cell } from "@/components/page";
@@ -22,11 +24,13 @@ export default async function ProjectOverviewPage({ searchParams }: PageProps<"/
   const customerId = customerIdParam ? Number(customerIdParam) : undefined;
   const projectStatusId = statusIdParam ? Number(statusIdParam) : undefined;
 
-  const [customers, statuses, projects] = await Promise.all([
+  const [customers, statuses, projects, activeScenarioId] = await Promise.all([
     db.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.projectStatus.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
     getProjectDemand({ customerId, projectStatusId }),
+    getActiveScenarioId(),
   ]);
+  const adjustmentCount = activeScenarioId ? await db.scenarioAdjustment.count({ where: { scenarioId: activeScenarioId } }) : 0;
 
   const totalRevenue = projects.reduce((sum, p) => sum + (p.revenueForecast ?? 0), 0);
   const totalWeightedHours = projects.reduce((sum, p) => sum + p.weightedHours, 0);
@@ -70,7 +74,14 @@ export default async function ProjectOverviewPage({ searchParams }: PageProps<"/
       </div>
 
       <Card>
-        <h2 className="mb-1 text-sm font-semibold text-slate-900">Weighted demand by project</h2>
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-900">Weighted demand by project</h2>
+          {adjustmentCount > 0 ? (
+            <Link href="/what-if" className="text-xs font-medium text-slate-500 hover:text-slate-900">
+              {adjustmentCount} what-if adjustment{adjustmentCount === 1 ? "" : "s"} applied →
+            </Link>
+          ) : null}
+        </div>
         <p className="mb-4 text-xs text-slate-400">Bar colour follows RAG status.</p>
         <ProjectDemandChart data={projects} />
       </Card>

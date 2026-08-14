@@ -39,3 +39,16 @@ export async function getActiveScenarioId(): Promise<number | null> {
 export async function listAllScenarios() {
   return db.scenario.findMany({ orderBy: { name: "asc" } });
 }
+
+/**
+ * §7.4: a scenario can be "Baseline + adjustments" rather than its own
+ * fully-populated row set — resolved via `Scenario.baseScenarioId`. Every
+ * query that filters ForecastAllocation/Capacity/etc. by scenarioId should
+ * resolve through this first, so a branch scenario (which has no rows of its
+ * own) reads its base scenario's data instead of coming back empty. One
+ * level only — no recursive chain-walking, a deliberate v1 limit.
+ */
+export async function resolveScenarioSourceId(scenarioId: number): Promise<number> {
+  const scenario = await db.scenario.findUnique({ where: { id: scenarioId }, select: { baseScenarioId: true } });
+  return scenario?.baseScenarioId ?? scenarioId;
+}

@@ -5,7 +5,8 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { buildCalendarDateRow } from "@/lib/calendar";
-import { getActiveScenarioId } from "@/lib/scenario";
+import { getActiveScenarioId, resolveScenarioSourceId } from "@/lib/scenario";
+import { applyProjectAdjustments, effectiveProbabilityPct, getScenarioAdjustments } from "@/lib/whatif";
 
 export function monthKeyOf(dateKey: number): string {
   const s = String(dateKey);
@@ -75,9 +76,10 @@ export type MonthlyDemandCapacity = {
  * from monthly fact_Capacity rows — the two grains are joined on "YYYY-MM".
  */
 export async function getMonthlyDemandVsCapacity(opts: { months: number; teamId?: number }): Promise<MonthlyDemandCapacity[]> {
-  const scenarioId = await getActiveScenarioId();
+  const activeScenarioId = await getActiveScenarioId();
   const monthKeys = upcomingMonthKeys(opts.months);
-  if (!scenarioId) return monthKeys.map((k) => ({ monthKey: k, label: monthLabel(k), demandHours: 0, availableHours: 0 }));
+  if (!activeScenarioId) return monthKeys.map((k) => ({ monthKey: k, label: monthLabel(k), demandHours: 0, availableHours: 0 }));
+  const scenarioId = await resolveScenarioSourceId(activeScenarioId);
 
   const [allocations, capacities] = await Promise.all([
     db.forecastAllocation.findMany({
@@ -126,16 +128,17 @@ export type TeamMonthUtilisation = {
 
 /** Utilisation % (§7.2) per team, per month — the heat map's data. */
 export async function getUtilisationHeatmap(months: number, opts?: { teamId?: number }): Promise<TeamMonthUtilisation[]> {
-  const scenarioId = await getActiveScenarioId();
+  const activeScenarioId = await getActiveScenarioId();
   const monthKeys = upcomingMonthKeys(months);
   const teams = await db.team.findMany({
     where: opts?.teamId ? { id: opts.teamId } : undefined,
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
-  if (!scenarioId) {
+  if (!activeScenarioId) {
     return teams.map((t) => ({ teamId: t.id, teamName: t.name, months: monthKeys.map((k) => ({ monthKey: k, label: monthLabel(k), utilisationPct: null })) }));
   }
+  const scenarioId = await resolveScenarioSourceId(activeScenarioId);
 
   const [allocations, capacities] = await Promise.all([
     db.forecastAllocation.findMany({
@@ -190,35 +193,54 @@ export async function getUtilisationHeatmap(months: number, opts?: { teamId?: nu
 
 export type DemandBridge = { committedHours: number; weightedHours: number; stretchHours: number };
 
-/** §7.1 Committed / Weighted / Stretch Demand, project-linked allocations only. */
-export async function getDemandBridge(opts?: { teamId?: number }): Promise<DemandBridge> {
-  const scenarioId = await getActiveScenarioId();
-  if (!scenarioId) return { committedHours: 0, weightedHours: 0, stretchHours: 0 };
+/**
+ * §7.1 Committed / Weighted / Stretch Demand, project-linked allocations
+ * only. `scenarioId`/`applyAdjustments` let the What-If page (src/app/(app)/
+ * what-if/page.tsx) compute a before/after comparison for the same scenario
+ * -- every other caller just gets the active scenario with adjustments
+ * applied, unchanged from before §7.4.
+ */
+export async function getDemandBridge(opts?: { teamId?: number; scenarioId?: number; applyAdjustments?: boolean }): Promise<DemandBridge> {
+  const requestedScenarioId = opts?.scenarioId ?? (await getActiveScenarioId());
+  if (!requestedScenarioId) return { committedHours: 0, weightedHours: 0, stretchHours: 0 };
+  const scenarioId = await resolveScenarioSourceId(requestedScenarioId);
+  const applyAdjustments = opts?.applyAdjustments ?? true;
 
-  const allocations = await db.forecastAllocation.findMany({
-    where: { scenarioId, projectId: { not: null }, ...(opts?.teamId ? { teamId: opts.teamId } : {}) },
-    select: {
-      hours: true,
-      project: {
-        select: {
-          probabilityOverridePct: true,
-          projectStatus: { select: { name: true, defaultProbabilityPct: true } },
+  const [allocations, adjustments] = await Promise.all([
+    db.forecastAllocation.findMany({
+      where: { scenarioId, projectId: { not: null }, ...(opts?.teamId ? { teamId: opts.teamId } : {}) },
+      select: {
+        projectId: true,
+        dateKey: true,
+        hours: true,
+        project: {
+          select: {
+            probabilityOverridePct: true,
+            projectStatus: { select: { name: true, defaultProbabilityPct: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    applyAdjustments ? getScenarioAdjustments(requestedScenarioId) : Promise.resolve([]),
+  ]);
+
+  const projectMeta = new Map(allocations.map((a) => [a.projectId!, a.project]));
+  const adjustedRows = applyProjectAdjustments(
+    allocations.map((a) => ({ projectId: a.projectId, dateKey: a.dateKey, hours: Number(a.hours) })),
+    adjustments
+  );
 
   let committedHours = 0;
   let weightedHours = 0;
   let stretchHours = 0;
-  for (const a of allocations) {
-    const status = a.project?.projectStatus;
+  for (const row of adjustedRows) {
+    const status = projectMeta.get(row.projectId!)?.projectStatus;
     if (!status || status.name === "Cancelled") continue;
-    const hours = Number(a.hours);
-    const probability = Number(a.project?.probabilityOverridePct ?? status.defaultProbabilityPct) / 100;
-    stretchHours += hours;
-    weightedHours += hours * probability;
-    if (status.name === "Committed" || status.name === "Won") committedHours += hours;
+    const baseProbabilityPct = Number(projectMeta.get(row.projectId!)?.probabilityOverridePct ?? status.defaultProbabilityPct);
+    const probability = effectiveProbabilityPct(baseProbabilityPct, row.projectId, adjustments) / 100;
+    stretchHours += row.hours;
+    weightedHours += row.hours * probability;
+    if (status.name === "Committed" || status.name === "Won") committedHours += row.hours;
   }
 
   return {
@@ -239,7 +261,8 @@ export type TeamHeadcount = {
 
 /** Current-month headcount vs vacancy vs open recruitment pipeline, per team. */
 export async function getTeamHeadcount(opts?: { teamId?: number }): Promise<TeamHeadcount[]> {
-  const scenarioId = await getActiveScenarioId();
+  const activeScenarioId = await getActiveScenarioId();
+  const scenarioId = activeScenarioId ? await resolveScenarioSourceId(activeScenarioId) : null;
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const dateKey = buildCalendarDateRow(monthStart).dateKey;
@@ -270,32 +293,55 @@ export async function getTeamHeadcount(opts?: { teamId?: number }): Promise<Team
 
 export type ProjectDemand = { projectId: number; projectName: string; weightedHours: number; revenueForecast: number | null; ragStatus: string | null };
 
-/** Weighted demand and revenue per project, for the Project Overview chart. */
-export async function getProjectDemand(opts?: { customerId?: number; projectStatusId?: number }): Promise<ProjectDemand[]> {
-  const scenarioId = await getActiveScenarioId();
-  if (!scenarioId) return [];
+/**
+ * Weighted demand and revenue per project, for the Project Overview chart.
+ * `scenarioId`/`applyAdjustments` -- see getDemandBridge's doc comment.
+ * A scenario-level Cancel zeroes a project's hours here rather than
+ * removing it from the list -- its real `projectStatus` (excluded above via
+ * the `NOT: {name: "Cancelled"}` filter) is a different thing from a
+ * scenario's hypothetical override, and the project should stay visible at
+ * zero so a before/after comparison has something to show.
+ */
+export async function getProjectDemand(opts?: {
+  customerId?: number;
+  projectStatusId?: number;
+  scenarioId?: number;
+  applyAdjustments?: boolean;
+}): Promise<ProjectDemand[]> {
+  const requestedScenarioId = opts?.scenarioId ?? (await getActiveScenarioId());
+  if (!requestedScenarioId) return [];
+  const scenarioId = await resolveScenarioSourceId(requestedScenarioId);
+  const applyAdjustments = opts?.applyAdjustments ?? true;
 
-  const projects = await db.project.findMany({
-    where: {
-      NOT: { projectStatus: { name: "Cancelled" } },
-      ...(opts?.customerId ? { customerId: opts.customerId } : {}),
-      ...(opts?.projectStatusId ? { projectStatusId: opts.projectStatusId } : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      revenueForecast: true,
-      ragStatus: true,
-      probabilityOverridePct: true,
-      projectStatus: { select: { defaultProbabilityPct: true } },
-      forecastAllocations: { where: { scenarioId }, select: { hours: true } },
-    },
-    orderBy: { name: "asc" },
-  });
+  const [projects, adjustments] = await Promise.all([
+    db.project.findMany({
+      where: {
+        NOT: { projectStatus: { name: "Cancelled" } },
+        ...(opts?.customerId ? { customerId: opts.customerId } : {}),
+        ...(opts?.projectStatusId ? { projectStatusId: opts.projectStatusId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        revenueForecast: true,
+        ragStatus: true,
+        probabilityOverridePct: true,
+        projectStatus: { select: { defaultProbabilityPct: true } },
+        forecastAllocations: { where: { scenarioId }, select: { dateKey: true, hours: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+    applyAdjustments ? getScenarioAdjustments(requestedScenarioId) : Promise.resolve([]),
+  ]);
 
   return projects.map((p) => {
-    const probability = Number(p.probabilityOverridePct ?? p.projectStatus.defaultProbabilityPct) / 100;
-    const hours = p.forecastAllocations.reduce((sum, a) => sum + Number(a.hours), 0);
+    const baseProbabilityPct = Number(p.probabilityOverridePct ?? p.projectStatus.defaultProbabilityPct);
+    const probability = effectiveProbabilityPct(baseProbabilityPct, p.id, adjustments) / 100;
+    const rows = applyProjectAdjustments(
+      p.forecastAllocations.map((a) => ({ projectId: p.id, dateKey: a.dateKey, hours: Number(a.hours) })),
+      adjustments
+    );
+    const hours = rows.reduce((sum, a) => sum + a.hours, 0);
     return {
       projectId: p.id,
       projectName: p.name,
@@ -323,7 +369,8 @@ export type MonthlyAccuracy = {
  * against isn't an accuracy result, it's just unplanned work.
  */
 export async function getForecastAccuracy(months: number): Promise<MonthlyAccuracy[]> {
-  const scenarioId = await getActiveScenarioId();
+  const activeScenarioId = await getActiveScenarioId();
+  const scenarioId = activeScenarioId ? await resolveScenarioSourceId(activeScenarioId) : null;
   const monthKeys = recentMonthKeys(months);
 
   const [actuals, forecasts] = await Promise.all([

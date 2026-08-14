@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { getDemandBridge, getForecastAccuracy, getMonthlyDemandVsCapacity, getUtilisationHeatmap, hasAnyActuals } from "@/lib/measures";
+import { getActiveScenarioId } from "@/lib/scenario";
 import { ManhattanChart } from "@/components/charts/ManhattanChart";
 import { DemandWaterfall } from "@/components/charts/DemandWaterfall";
 import { UtilisationHeatmap } from "@/components/charts/UtilisationHeatmap";
@@ -45,14 +47,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const { teamId: teamIdParam } = await searchParams;
   const teamId = teamIdParam ? Number(teamIdParam) : undefined;
 
-  const [teams, overview, monthly, bridge, heatmap, actualsExist] = await Promise.all([
+  const [teams, overview, monthly, bridge, heatmap, actualsExist, activeScenarioId] = await Promise.all([
     db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     getOverview(teamId),
     getMonthlyDemandVsCapacity({ months: 6, teamId }),
     getDemandBridge({ teamId }),
     getUtilisationHeatmap(6, { teamId }),
     hasAnyActuals(),
+    getActiveScenarioId(),
   ]);
+  const adjustmentCount = activeScenarioId ? await db.scenarioAdjustment.count({ where: { scenarioId: activeScenarioId } }) : 0;
   const accuracy = actualsExist ? await getForecastAccuracy(6) : null;
 
   const current = monthly[0];
@@ -106,7 +110,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </Card>
         </div>
         <Card>
-          <h2 className="mb-1 text-sm font-semibold text-slate-900">Demand bridge</h2>
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900">Demand bridge</h2>
+            {adjustmentCount > 0 ? (
+              <Link href="/what-if" className="text-xs font-medium text-slate-500 hover:text-slate-900">
+                {adjustmentCount} what-if adjustment{adjustmentCount === 1 ? "" : "s"} applied →
+              </Link>
+            ) : null}
+          </div>
           <p className="mb-4 text-xs text-slate-400">§7.1 — Committed → Weighted → Stretch.</p>
           <DemandWaterfall bridge={bridge} />
         </Card>

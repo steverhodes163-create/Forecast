@@ -31,7 +31,10 @@ export default async function CapacityPage({ searchParams }: PageProps<"/capacit
   const { error } = await searchParams;
   const [teams, scenarios, activeScenarioId, capacities] = await Promise.all([
     db.team.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.scenario.findMany({ where: { isLocked: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    // Branch scenarios (baseScenarioId set) are "base + adjustments only" --
+    // excluded here so hand-entered rows never collide with adjustment
+    // resolution (§7.4, see src/lib/whatif.ts).
+    db.scenario.findMany({ where: { isLocked: false, baseScenarioId: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     getActiveScenarioId(),
     db.capacity.findMany({
       take: 50,

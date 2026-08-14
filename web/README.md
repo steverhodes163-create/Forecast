@@ -57,8 +57,12 @@ much clearer signal than random pages 500ing in production.
 **Phase 2 (Master Data & Input) — replaces the `MST_`/`INP_` Excel sheets:**
 - Full CRUD (create/edit/delete) for **Employees**, **Projects**, **Departments**, **Teams**.
 - Config-driven CRUD (`src/lib/lookups.ts` + `/settings/[table]`) for the 14 scalar-only
-  lookup tables (Project Status, Priority, Forecast Source, Scenario, Job Role, etc.) — one
-  page template serves all of them rather than 14 near-duplicate files.
+  lookup tables (Project Status, Priority, Forecast Source, Adjustment Type, Job Role,
+  etc.) — one page template serves all of them rather than 14 near-duplicate files.
+  `Scenario` is deliberately **not** one of them, despite being scalar-looking at a glance —
+  it carries a self-referential `baseScenarioId` (§7.4's "Baseline + adjustments" branching,
+  see below) that `lookups.ts`'s scalar-only field types can't express, so it gets its own
+  bespoke handling instead.
 - **`/forecast`** — `fact_ForecastAllocation` input supporting all three planning modes
   (Team / Employee / Skill) from §7 on one form, one table, one reporting layer.
 - **`/capacity`** — `fact_Capacity` input (upsert per team/scenario/month) with §7.2's
@@ -266,9 +270,70 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   this task" (`src/app/actions/my-tasks.ts`) — any employee can mark their own work done
   without needing edit rights over the plan's structure.
 
+**What-if & scenarios (§7.4) — Phase 5 of the revised roadmap:**
+- Scenarios are "Baseline + adjustments," not duplicated copies of the allocation table.
+  `Scenario.baseScenarioId` (a self-relation that existed in the schema from the start but
+  was never wired up until this phase) marks a scenario as a **branch** — it holds zero
+  `ForecastAllocation`/`Capacity` rows of its own and reads its base scenario's rows at query
+  time instead. `resolveScenarioSourceId` (`src/lib/scenario.ts`) is that resolution point;
+  every `measures.ts` function that filters by `scenarioId` runs through it, so a branch
+  scenario shows real numbers everywhere (Business/Team Overview, forecast accuracy, etc.),
+  not just wherever adjustments happen to be wired in.
+- **`/what-if`** (in the main nav) — for whichever scenario the header's scenario switcher
+  currently has active. If it's a real base scenario (`Baseline`/`Budget`), the page leads
+  with "Create a what-if scenario" (`createScenarioBranchAction`) rather than letting
+  adjustments attach directly to it — a branch is one click, and it's what keeps a
+  hypothetical from silently changing what every other viewer of `Baseline` sees. Once
+  viewing a branch, the page shows that scenario's adjustments (add/delete) and a
+  before/after Committed/Weighted/Stretch panel (`getDemandBridge` called twice, toggling
+  `applyAdjustments`) — the same numbers Business Overview shows, not a separate copy,
+  proving out §7.4's "every dashboard recalculates automatically" claim directly on the page
+  where you're deciding whether to keep the adjustment.
+- **`src/lib/whatif.ts`** — the resolver. Only **Delay**, **Cancel** and **Win** — the three
+  `AdjustmentType`s the architecture doc gives concrete, computable resolution rules for —
+  have any numeric effect: Cancel drops a project's allocation rows (optionally gated by an
+  `effectiveDateKey`), Delay shifts their `dateKey` forward by `deltaWeeks × 7` days, Win
+  forces a project's effective probability to 100% for weighted-demand math. `Recruitment
+  Freeze` / `New Hire` / `Contractor Loss` / `Team Expansion` / `Team Reduction` remain fully
+  creatable and visible on `/what-if` (they're still real decisions worth logging against a
+  scenario) but have no numeric effect on any number — the schema (and the architecture doc
+  itself) carries no headcount/FTE magnitude field for them, only `deltaWeeks`/`notes`.
+  Wired into `getDemandBridge`/`getProjectDemand` (`src/lib/measures.ts`) via additive
+  optional `{ scenarioId, applyAdjustments }` params — every existing call site is
+  unaffected. `dateKeyToDate` (`src/lib/calendar.ts`) is the new inverse of `dateKeyFor`
+  the Delay shift needed.
+- **Delay's numeric effect is a documented no-op on today's dashboards** and covered by a
+  guarded regression check in `e2e-whatif.mjs`, not silently ignored: `getDemandBridge`/
+  `getProjectDemand` are scalar totals with no date breakdown, so shifting a `dateKey`
+  doesn't change a sum. Delay's effect only shows up on calendarized views, and the two
+  calendarized measures (`getMonthlyDemandVsCapacity`, `getUtilisationHeatmap`) have a
+  separate, pre-existing gap: they only sum `ForecastAllocation` rows with `teamId` set, but
+  all project-linked and task-driven rows set `employeeId`/`projectId` instead — so those two
+  already exclude all project-linked demand today, regardless of what-if. Not fixed as part
+  of this phase; flagged here for whoever picks up the cross-project rollup view next, since
+  the same gap was found independently while researching that feature too.
+- Entry forms (`/forecast`, `/capacity`) exclude branch scenarios from their own scenario
+  dropdown (`baseScenarioId: null` added alongside the existing `isLocked: false` filter) —
+  a branch's whole point is "base + adjustments only," so hand-entering rows directly under
+  its own `scenarioId` would create an unresolvable override-vs-merge ambiguity.
+- `src/app/actions/whatif.ts` — `createAdjustmentAction`/`deleteAdjustmentAction`, gated by
+  `ADMIN`/`PMO` (matching `projects.ts` — a Cancel/Win/Delay call is a commercial decision
+  about a project's trajectory, the same class of judgement call as editing a project's own
+  `probabilityOverridePct`). `createScenarioBranchAction` (`src/app/actions/scenario.ts`)
+  shares that gate.
+- `scripts/check-whatif.mjs` — a standalone, no-server sanity check of the resolver's pure
+  functions (same idea as `check-scheduling.mjs`), run with `npx tsx scripts/check-whatif.mjs`
+  (plain `node --experimental-strip-types` won't resolve the `@/` alias `whatif.ts` uses for
+  its calendar import, unlike `scheduling.ts`'s target which has zero imports).
+  `scripts/e2e-whatif.mjs` branches a scenario, applies Cancel/Win/Delay against seeded
+  sample projects, confirms Business Overview and Project Overview move accordingly (and
+  that Delay doesn't), confirms the What-If page's own before/after panel agrees with the
+  real dashboards, and cleans up directly via SQL afterward since there's no delete-scenario
+  UI action (branch scenarios are meant to accumulate, not be torn down from the app itself).
+
 ## Not yet built (later phases — see §0 of the architecture doc)
 
-The §7.4 what-if UI (scenario adjustments — the data model for it, `ScenarioAdjustment`,
-already exists), the cross-project per-team rollup view, and drag-to-resize on the Gantt
-chart (Phase B of task-driven forecasting) — all noted above. Hardening and UAT (§16
-Phase 9-10) haven't started.
+The cross-project per-team rollup view and drag-to-resize on the Gantt chart (Phase B of
+task-driven forecasting) — both noted above. Hardening (§16 Phase 9) hasn't started;
+formal UAT (Phase 10) needs real stakeholder sign-off from Leadership/PMO/Finance/HR, which
+isn't something this build process can do on its own.
