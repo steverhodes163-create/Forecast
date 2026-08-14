@@ -23,7 +23,7 @@ export default async function ProjectGanttPage({ params }: PageProps<"/projects/
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`${project.name} — Gantt`}
-        description="§ task-driven forecasting — dependencies and the critical path (highlighted in red) drive the forecast grid's hours automatically. Edit the sheet below like a spreadsheet; drag-to-resize on the chart is a planned follow-up."
+        description="§ task-driven forecasting — dependencies and the critical path (highlighted in red) drive the forecast grid's hours automatically. Edit the sheet below like a spreadsheet, or drag a bar's body to shift its start or its right edge to resize it."
       />
 
       <Card>
@@ -36,7 +36,7 @@ export default async function ProjectGanttPage({ params }: PageProps<"/projects/
             </button>
           </form>
         </div>
-        <GanttChart tasks={gantt.tasks} />
+        <GanttChart tasks={gantt.tasks} projectId={project.id} />
       </Card>
 
       <Card>

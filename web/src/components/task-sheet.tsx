@@ -222,6 +222,7 @@ export function TaskSheet({
                 </td>
                 <td className="px-1 py-0.5">
                   <input
+                    key={t.durationDays}
                     type="text"
                     defaultValue={`${t.durationDays}d`}
                     onBlur={(e) => commitDuration(t.id, e.currentTarget.value)}

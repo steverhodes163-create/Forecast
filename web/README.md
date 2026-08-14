@@ -216,10 +216,9 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   assignee's team was never added to the project's forecast grid, it's added automatically —
   tasks are meant to drive the grid, so the grid always shows what's driving it.
 - `src/components/gantt-chart.tsx` — bars positioned by computed dates, dependency arrows
-  (SVG elbow connectors), critical path in red, a "today" marker. **Read-only — edit dates via
-  the task sheet below it, not by dragging the chart.** Drag-to-resize is an explicit,
-  confirmed-with-the-user follow-up phase once this foundation (data model, CPM engine, and
-  correct rendering) is proven out, not a cut corner.
+  (SVG elbow connectors), critical path in red, a "today" marker. Interactive: drag a bar's
+  body to shift its start, or its right edge to resize it — see "Drag-to-resize /
+  drag-to-move" below.
 - Cycle prevention: adding a dependency that would close a loop is rejected server-side
   (BFS over the existing graph) with a clear error, before anything is written.
 - A task's schedule is scenario-independent (dates/durations/dependencies don't vary by
@@ -374,9 +373,55 @@ the CPM scheduling math — run with `node --experimental-strip-types scripts/ch
   legitimate side effect they don't themselves clean up — this test is self-sufficient
   against that regardless of run order.
 
+**Drag-to-resize / drag-to-move (Gantt chart):**
+- Drag a bar's body to shift its start, or its right edge to resize it — both directly on
+  `/projects/[id]/gantt`'s chart, no separate edit step needed. This closes the last item
+  from the original architecture-doc backlog (What-If and the team rollup, both above,
+  were the other two).
+- **Drag-to-move writes `Task.manualStartDate`, a field that already existed in the schema
+  and was already fully handled by the CPM engine (`src/lib/scheduling.ts`'s
+  `computeSchedule`) — it just never had a write path.** `manualStartDate` is a "no earlier
+  than" floor: it pushes a task's early start later, but a dependency that would push it
+  even later than the manual date always wins (`manualDateConflict: true` is set, surfaced
+  in the bar's tooltip). Building this feature was mostly wiring up a field the scheduling
+  engine was already designed to support — not inventing new semantics — via a new
+  `setTaskManualStartDateAction` (`src/app/actions/tasks.ts`, same shape as every other
+  action there; one action for both set and clear, `date: null` clears it).
+- **Drag-to-resize reuses `setTaskDurationAction` verbatim** — the same action the task
+  sheet's Duration cell already calls; no new action needed for it.
+- `src/lib/gantt-drag.ts` — the two pure helpers behind the interaction:
+  `pixelDeltaToCalendarDays` (pixel delta → calendar-day delta, matching the chart's own
+  `PX_PER_DAY` positioning convention — raw calendar days, not working days) and
+  `clampResizeDays` (floors a resize preview at 1 day, mirroring `setTaskDurationAction`'s
+  own server-side rejection of shorter durations, so that rejection path stays unreachable
+  via dragging).
+- `src/components/gantt-chart.tsx` uses native Pointer Events (`onPointerDown` +
+  `setPointerCapture`, no drag library) — the live preview during a drag is pure client
+  state (no server call until drop); dependency-connector arrows intentionally stay static
+  during the gesture and only refresh after the commit's `router.refresh()`, since
+  recomputing them live would mean touching every bar's rect on every `pointermove` for a
+  purely cosmetic improvement. No client-side role gating (matches every other edit
+  surface in this app) — a non-editor's drop is rejected server-side like any other action,
+  surfaced via the bar's existing tooltip.
+- `scripts/check-scheduling.mjs` gained `manualStartDate` fixture cases (floor-wins,
+  dependency-wins-with-conflict) — this code path had **zero test coverage** before, since
+  every prior fixture used `manualStartDate: null`. `scripts/check-gantt-drag.mjs` is a new
+  standalone check of the two pure helpers above. `scripts/e2e-gantt-drag.mjs` drives real
+  drag gestures with Playwright's mouse API (`{ steps: N }` on the intermediate move, so
+  real `pointermove` events fire) — resizes a marker task and cross-checks the task sheet's
+  Duration cell agrees, moves it and confirms the date range shifts, then drags a
+  dependent task's bar 10 days earlier and asserts the manual-start-date conflict tooltip
+  appears — the first time that message (present in the code since the Gantt chart shipped)
+  has ever been reachable.
+- Fixed a related bug found while building this: the task sheet's Duration `<input>` used
+  an uncontrolled `defaultValue`, so a duration changed from *outside* the sheet (i.e. by
+  dragging on the chart) never visually updated the sheet's own cell — React doesn't re-sync
+  `defaultValue` on a re-render of an already-mounted uncontrolled input. Fixed by keying
+  the input on the value itself (`key={t.durationDays}`), forcing a remount whenever the
+  server-provided duration actually changes.
+
 ## Not yet built (later phases — see §0 of the architecture doc)
 
-Drag-to-resize on the Gantt chart (Phase B of task-driven forecasting, noted above).
 Hardening (§16 Phase 9) hasn't started; formal UAT (Phase 10) needs real stakeholder
 sign-off from Leadership/PMO/Finance/HR, which isn't something this build process can do on
 its own.

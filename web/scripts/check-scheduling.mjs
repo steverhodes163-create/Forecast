@@ -76,3 +76,34 @@ const lateFinish = new Date(Date.UTC(2026, 7, 12)); // Wed the following week
 const lateSchedule = computeSchedule(chainTasks(lateFinish), chainDeps, anchor);
 const lateBStart = lateSchedule.get(2).startDate.toISOString().slice(0, 10);
 console.log("  A finishes late (12 Aug) -> B start:", lateBStart, " expected 2026-08-13:", lateBStart === "2026-08-13");
+
+// manualStartDate (the Gantt drag-to-move field, previously zero test
+// coverage -- every fixture above uses manualStartDate: null): a "no
+// earlier than" floor, dependencies still win if they'd push later.
+console.log("\nmanualStartDate (drag-to-move):");
+const manualLaterDate = new Date(Date.UTC(2026, 7, 10)); // Monday the following week, no predecessor
+const standaloneTask = [{ id: 1, durationDays: 3, manualStartDate: manualLaterDate, completedAt: null }];
+const standaloneSchedule = computeSchedule(standaloneTask, [], anchor);
+const standaloneStart = standaloneSchedule.get(1).startDate.toISOString().slice(0, 10);
+console.log(
+  "  no predecessor, manual date later than default -> floor wins:",
+  standaloneStart,
+  "expected 2026-08-10, no conflict:",
+  standaloneStart === "2026-08-10" && !standaloneSchedule.get(1).manualDateConflict
+);
+
+const manualEarlierDate = new Date(Date.UTC(2026, 7, 3)); // same as anchor -- earlier than what A->B's dependency alone requires
+const conflictTasks = [
+  { id: 1, durationDays: 5, manualStartDate: null, completedAt: null },
+  { id: 2, durationDays: 3, manualStartDate: manualEarlierDate, completedAt: null },
+];
+const conflictSchedule = computeSchedule(conflictTasks, chainDeps, anchor);
+const conflictBStart = conflictSchedule.get(2).startDate.toISOString().slice(0, 10);
+console.log(
+  "  predecessor pushes later than manual date -> dependency wins, conflict flagged:",
+  conflictBStart,
+  "expected 2026-08-10:",
+  conflictBStart === "2026-08-10",
+  " conflict:",
+  conflictSchedule.get(2).manualDateConflict === true
+);

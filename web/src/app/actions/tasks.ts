@@ -102,6 +102,23 @@ export async function setTaskDurationAction(input: { taskId: number; projectId: 
   return { ok: true };
 }
 
+// "No earlier than" -- dependencies can still push a task later regardless
+// of this (see scheduling.ts's manualDateConflict handling). One action for
+// both set and clear (date: null), matching setTaskOwnerTeamAction's
+// nullable-payload convention below.
+export async function setTaskManualStartDateAction(input: { taskId: number; projectId: number; date: string | null }): Promise<ActionResult> {
+  const { taskId, projectId, date } = input;
+  try {
+    await requireEditor();
+    await db.task.update({ where: { id: taskId }, data: { manualStartDate: date ? new Date(date) : null } });
+    await recomputeProjectSchedule(projectId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not update start date." };
+  }
+  revalidateProject(projectId);
+  return { ok: true };
+}
+
 export async function setTaskPredecessorsAction(input: { taskId: number; projectId: number; raw: string }): Promise<ActionResult> {
   const { taskId, projectId, raw } = input;
   try {
