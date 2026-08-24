@@ -17,7 +17,7 @@ export function LoginForm() {
           name="email"
           required
           autoComplete="username"
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-accent"
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
@@ -27,7 +27,7 @@ export function LoginForm() {
           name="password"
           required
           autoComplete="current-password"
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-accent"
         />
       </label>
       {state?.error ? (
@@ -38,7 +38,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-60"
+        className="mt-2 rounded-md bg-brand-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>

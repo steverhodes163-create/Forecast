@@ -156,7 +156,7 @@ export function ForecastGrid({
                 key={u}
                 type="button"
                 onClick={() => setUnit(u)}
-                className={`px-3 py-1 text-xs font-medium ${unit === u ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                className={`px-3 py-1 text-xs font-medium ${unit === u ? "bg-brand-accent text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
                 {u === "fte" ? "FTE" : "Hours"}
               </button>
@@ -360,7 +360,7 @@ export function ForecastGrid({
             type="button"
             onClick={handleAddTeam}
             disabled={!teamToAdd}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-40"
+            className="rounded-md bg-brand-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-40"
           >
             Add team
           </button>

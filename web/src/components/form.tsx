@@ -12,7 +12,7 @@ function FieldShell({ label, htmlFor, children }: { label: string; htmlFor: stri
 }
 
 const inputClass =
-  "rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 disabled:bg-slate-50 disabled:text-slate-400";
+  "rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-accent disabled:bg-slate-50 disabled:text-slate-400";
 
 export function TextField(props: {
   name: string;
@@ -138,7 +138,7 @@ export function SubmitButton({ children }: { children: ReactNode }) {
   return (
     <button
       type="submit"
-      className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+      className="rounded-md bg-brand-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-hover"
     >
       {children}
     </button>

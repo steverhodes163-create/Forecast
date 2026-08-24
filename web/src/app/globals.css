@@ -5,9 +5,20 @@
   --foreground: #171717;
 }
 
+/*
+ * YASA brand tokens. Inferred from general knowledge of YASA's
+ * industrial/EV-motor engineering identity (dark graphite chrome, a
+ * copper/orange accent) -- not pixel-checked against yasa.com, which this
+ * environment cannot reach. Swap these hexes if you have the real values.
+ */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand-ink: #14171a;
+  --color-brand-ink-soft: #20242a;
+  --color-brand-accent: #e8541e;
+  --color-brand-accent-hover: #c8451a;
+  --color-brand-accent-soft: #fdece2;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
 }

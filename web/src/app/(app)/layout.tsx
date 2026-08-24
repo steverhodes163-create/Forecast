@@ -30,19 +30,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+      <header className="border-b-2 border-brand-accent bg-brand-ink">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3">
           <div className="flex items-center gap-8">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">YASA</p>
-              <p className="-mt-0.5 text-sm font-semibold text-slate-900">Resource Forecasting</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-accent">YASA</p>
+              <p className="-mt-0.5 text-sm font-semibold text-white">Resource Forecasting</p>
             </div>
             <nav className="flex flex-wrap items-center gap-1">
               {nav.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white"
                 >
                   {item.label}
                 </Link>
@@ -52,13 +52,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-4">
             <ScenarioSwitcher scenarios={scenarios} activeId={activeScenarioId} />
             <div className="text-right">
-              <p className="text-sm font-medium text-slate-900">{session.name}</p>
+              <p className="text-sm font-medium text-white">{session.name}</p>
               <p className="text-xs text-slate-400">{session.appRole}</p>
             </div>
             <form action={logoutAction}>
               <button
                 type="submit"
-                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                className="rounded-md border border-white/20 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white"
               >
                 Sign out
               </button>

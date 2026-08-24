@@ -19,7 +19,7 @@ export function PageHeader({
       {action ? (
         <Link
           href={action.href}
-          className="shrink-0 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          className="shrink-0 rounded-md bg-brand-accent px-3 py-2 text-sm font-medium text-white hover:bg-brand-accent-hover"
         >
           {action.label}
         </Link>

@@ -8,8 +8,8 @@ export default async function LoginPage() {
 
   return (
     <div className="flex flex-1 items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 border-t-4 border-t-brand-accent bg-white p-8 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-wider text-brand-accent">
           YASA Resource Forecasting
         </p>
         <h1 className="mt-1 text-xl font-semibold text-slate-900">Sign in</h1>
