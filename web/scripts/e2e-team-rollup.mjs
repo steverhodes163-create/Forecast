@@ -37,6 +37,25 @@ async function clearProjectTeamLinks(projectIds) {
   }
 }
 
+// The rollup counts every project a team is linked to, not just the two
+// this test adds it to. Seeded demo data can legitimately link the team the
+// UI happens to pick (whichever sorts first in the "Add team" dropdown) to
+// other projects too (e.g. via their own Gantt task assignments) -- strip
+// those extra links so "2 project rows + 1 total" stays a valid assertion
+// regardless of which team gets picked or what else has been seeded.
+async function clearOtherProjectTeamLinksForTeam(teamName, exceptProjectIds) {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      'DELETE FROM "ProjectTeam" WHERE "teamId" = (SELECT id FROM "Team" WHERE name = $1) AND "projectId" != ALL($2)',
+      [teamName, exceptProjectIds]
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   await deleteTestScenario();
 
@@ -87,6 +106,7 @@ async function main() {
   await page.goto(BASE + projectAHref);
   await page.selectOption("main select", { index: 1 });
   const teamName = (await page.locator("main select option").nth(1).textContent())?.trim();
+  await clearOtherProjectTeamLinksForTeam(teamName, [projectAId, projectBId]);
   await page.click('button:has-text("Add team")');
   await page.waitForFunction((name) => document.querySelector("tbody")?.innerText.includes(name), teamName, { timeout: 10000 });
   await page.click('button:has-text("Hours")');

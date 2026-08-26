@@ -81,7 +81,12 @@ async function main() {
 
   console.log("2. Open a project's Gantt page, add a marker task...");
   await page.goto(BASE + "/projects");
-  await page.locator('a:has-text("Gantt")').first().click();
+  // "Zephyr" specifically -- it's the one seeded project with zero existing
+  // tasks. The others (NM-450/Aurora/Falcon) now ship with a full demo
+  // Gantt, and a marker task added after 8 existing rows can render below
+  // the viewport, where page.mouse's raw coordinates (unlike a locator
+  // click) won't auto-scroll to reach it.
+  await page.locator('tr:has-text("Zephyr") a:has-text("Gantt")').click();
   await page.waitForURL(/\/projects\/\d+\/gantt/);
   await addTask("Drag E2E Task A", 5, null);
 

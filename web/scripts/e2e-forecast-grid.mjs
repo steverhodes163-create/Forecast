@@ -20,7 +20,12 @@ async function main() {
 
   console.log("2. Open a project's forecast grid...");
   await page.goto(BASE + "/projects");
-  await page.locator('a:has-text("Forecast grid")').first().click();
+  // "Zephyr" specifically -- it's the one seeded project left with zero
+  // teams/tasks, which this test's row-count/empty-state assertions need.
+  // The others (NM-450/Aurora/Falcon) now ship with real multi-team Gantt
+  // data for the demo, so `.first()` would land on a project that already
+  // has several "Remove" buttons and rows on its grid.
+  await page.locator('tr:has-text("Zephyr") a:has-text("Forecast grid")').click();
   await page.waitForURL(/\/projects\/\d+\/forecast/);
   console.log("   -> on", page.url());
 

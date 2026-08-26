@@ -25,11 +25,22 @@ architecture).
 npm install
 cp .env.example .env   # then fill in DATABASE_URL and AUTH_SECRET
 npx prisma migrate dev # creates all tables from prisma/schema.prisma
-npx prisma db seed     # loads fictional demo data (org, projects, forecast rows)
+npx prisma db seed     # loads a full fictional demo dataset -- see below
 npm run dev
 ```
 
-Demo login: `steve@yasa.local` / `steve` (seeded — change/remove before any non-local use).
+**Demo dataset**: ~50 employees across 6 departments/8 teams, 5 projects (three with full
+Gantt-driven resource plans and one deliberately at-risk on a resourcing clash), 6 months of
+actuals/forecast-accuracy history, a multi-team capacity picture, an open recruitment
+pipeline, a few contractors, and one working what-if branch scenario — enough to demo every
+page with real-looking data on first login. All org/customer/project names are fictional
+(`(sample)` suffix). Demo logins (seeded — change/remove before any non-local use):
+
+| Email | Password | Role |
+| --- | --- | --- |
+| `steve@yasa.local` | `steve` | ADMIN |
+| `sarah.pmo@yasa.local` | `pmo` | PMO |
+| `exec.viewer@yasa.local` | `viewer` | VIEWER (read-only) |
 
 To reseed from a clean slate, use `npx prisma migrate reset` (destructive — drops and
 recreates the local dev database; never run against a shared/production database).
